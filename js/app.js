@@ -269,6 +269,18 @@ function bindSettingsEvents() {
       showToast('위키 페이지 초기화 완료');
     });
   }
+
+  // Force Refresh App
+  const btnRefresh = document.getElementById('btnForceRefresh');
+  if (btnRefresh) {
+    btnRefresh.addEventListener('click', async () => {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for (let r of regs) await r.unregister();
+      }
+      window.location.reload();
+    });
+  }
 }
 
 function bindChatEvents() {

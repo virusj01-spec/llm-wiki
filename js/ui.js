@@ -310,6 +310,14 @@ export async function renderSettings() {
         <button id="btnInitPages" class="btn-secondary-sm">📝 초기화</button>
       </div>
     </div>
+
+    <div class="settings-group">
+      <h3>🔄 앱 업데이트</h3>
+      <div class="setting-row">
+        <label>최신 기능 반영 (캐시 지우지 않고 새로고침)</label>
+        <button id="btnForceRefresh" class="btn-secondary-sm">🔄 앱 새로고침</button>
+      </div>
+    </div>
   `;
 }
 
