@@ -155,6 +155,31 @@ export function setCurrentPage(slug) { currentPage = slug; }
 export function clearCurrentPage() { currentPage = null; }
 
 // ============================================================
+// CHAT
+// ============================================================
+export async function renderChat() {
+  return `
+    <div class="screen-header">
+      <h1>💬 Chat</h1>
+      <p class="screen-subtitle">내 업무일지(위키)를 바탕으로 질문하세요</p>
+    </div>
+    
+    <div class="chat-container">
+      <div id="chatMessages" class="chat-messages">
+        <div class="chat-msg bot">
+          <div class="msg-bubble">안녕하세요! 지금까지 작성하신 위키 내용을 바탕으로 답변해 드릴 수 있습니다. 궁금한 점을 물어보세요!</div>
+        </div>
+      </div>
+      
+      <div class="chat-input-wrap">
+        <textarea id="chatInput" class="chat-textarea" placeholder="질문을 입력하세요... (예: A프로젝트의 진행 상황이 어떻게 돼?)" rows="2"></textarea>
+        <button id="btnSendChat" class="btn-primary-sm">전송</button>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
 // DASHBOARD
 // ============================================================
 export async function renderDashboard() {

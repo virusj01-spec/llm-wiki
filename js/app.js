@@ -53,6 +53,7 @@ async function navigate(tab) {
   switch(tab) {
     case 'inbox': html = await UI.renderInbox(); break;
     case 'wiki': html = await UI.renderWiki(); break;
+    case 'chat': html = await UI.renderChat(); break;
     case 'dashboard': html = await UI.renderDashboard(); break;
     case 'settings': html = await UI.renderSettings(); break;
     case 'log': html = await UI.renderLog(); break;
@@ -70,6 +71,7 @@ function bindScreenEvents(tab) {
   switch(tab) {
     case 'inbox': bindInboxEvents(); break;
     case 'wiki': bindWikiEvents(); break;
+    case 'chat': bindChatEvents(); break;
     case 'settings': bindSettingsEvents(); break;
   }
 }
@@ -269,8 +271,90 @@ function bindSettingsEvents() {
   }
 }
 
-// ============================================================
-// Utilities
+function bindChatEvents() {
+  const btn = document.getElementById('btnSendChat');
+  const input = document.getElementById('chatInput');
+
+  if (btn && input) {
+    btn.addEventListener('click', async () => {
+      const text = input.value.trim();
+      if (!text) return;
+
+      appendChatMessage('user', text);
+      input.value = '';
+
+      const loadingId = appendChatMessage('bot', '위키 내용을 검토하며 생각 중...', true);
+
+      try {
+        const pages = await db.getPages();
+        let context = '내 위키 데이터:\\n\\n';
+        for (const p of pages) {
+          if (p.content && p.content.length > 50) {
+            context += `--- Page: ${p.title} ---\\n${p.content}\\n\\n`;
+          }
+        }
+
+        const prompt = `당신은 사용자의 업무일지 위키를 기반으로 답변하는 똑똑한 AI 어시스턴트입니다.
+제공된 위키 데이터를 바탕으로 사용자의 질문에 정확하게 답변하세요.
+만약 위키 데이터에 관련 내용이 없다면 "위키에 관련 내용이 없습니다"라고 밝힌 후 일반적인 지식으로 답변하세요.
+답변은 마크다운 형식으로 보기 좋게 정리해서 제공하세요.
+
+${context}
+
+사용자 질문: ${text}`;
+
+        const { default: gemini } = await import('./gemini.js');
+        const reply = await gemini.flash(prompt, { maxTokens: 1024 });
+        updateChatMessage(loadingId, reply);
+      } catch (e) {
+        updateChatMessage(loadingId, '오류 발생: ' + e.message);
+      }
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        btn.click();
+      }
+    });
+  }
+}
+
+function appendChatMessage(role, text, isLoading = false) {
+  const chatMsgs = document.getElementById('chatMessages');
+  if (!chatMsgs) return null;
+  const id = 'msg-' + Date.now();
+  const div = document.createElement('div');
+  div.className = `chat-msg ${role}`;
+  div.id = id;
+
+  if (isLoading) div.classList.add('loading');
+
+  if (role === 'bot' && !isLoading) {
+    import('./markdown.js').then(({renderMarkdown}) => {
+      div.innerHTML = `<div class="msg-bubble markdown-body">${renderMarkdown(text)}</div>`;
+    });
+  } else {
+    div.innerHTML = `<div class="msg-bubble">${escHtml(text)}</div>`;
+  }
+
+  chatMsgs.appendChild(div);
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+  return id;
+}
+
+function updateChatMessage(id, text) {
+  const div = document.getElementById(id);
+  if (div) {
+    div.classList.remove('loading');
+    import('./markdown.js').then(({renderMarkdown}) => {
+      div.innerHTML = `<div class="msg-bubble markdown-body">${renderMarkdown(text)}</div>`;
+      const chatMsgs = document.getElementById('chatMessages');
+      if(chatMsgs) chatMsgs.scrollTop = chatMsgs.scrollHeight;
+    });
+  }
+}
+
 // ============================================================
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
