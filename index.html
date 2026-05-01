@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="description" content="LLM Wiki — 안드로이드 모바일 업무일지 자동화 앱">
+  <meta name="theme-color" content="#0a0a1a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>LLM Wiki</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<div class="app">
+  <!-- Top Bar -->
+  <header class="top-bar">
+    <span class="logo">🧠 LLM Wiki</span>
+  </header>
+
+  <!-- Main Content Area -->
+  <main class="main-content" id="mainContent">
+    <div class="empty-msg">로딩 중...</div>
+  </main>
+
+  <!-- Bottom Tab Bar -->
+  <nav class="tab-bar">
+    <button class="tab-btn active" data-tab="inbox">
+      <span class="tab-icon">📥</span>
+      Inbox
+    </button>
+    <button class="tab-btn" data-tab="wiki">
+      <span class="tab-icon">📝</span>
+      Wiki
+    </button>
+    <button class="tab-btn" data-tab="dashboard">
+      <span class="tab-icon">📊</span>
+      Dashboard
+    </button>
+    <button class="tab-btn" data-tab="settings">
+      <span class="tab-icon">⚙️</span>
+      Settings
+    </button>
+    <button class="tab-btn" data-tab="log">
+      <span class="tab-icon">📋</span>
+      Log
+    </button>
+  </nav>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
