@@ -64,11 +64,11 @@ class GeminiClient {
 
   // Convenience methods
   async flash(prompt, options = {}) {
-    return this.generate('gemini-2.5-flash-preview-05-20', prompt, options);
+    return this.generate('gemini-2.0-flash', prompt, options);
   }
 
   async pro(prompt, options = {}) {
-    return this.generate('gemini-2.5-pro-preview-05-06', prompt, options);
+    return this.generate('gemini-1.5-pro', prompt, options);
   }
 
   _sleep(ms) {
