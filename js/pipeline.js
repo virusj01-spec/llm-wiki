@@ -4,6 +4,7 @@
  */
 import db from './db.js';
 import gemini from './gemini.js';
+import github from './github.js';
 
 const DEFAULT_SCHEMA = {
   pages: [
@@ -141,6 +142,14 @@ ${memoText}`;
         const newContent = await this.synthesize(page, memo.text, memo.attachment);
         page.content = newContent;
         await db.savePage(page);
+
+        // GitHub 자동 동기화 (실패해도 앱 흐름은 중단하지 않음)
+        try {
+          await github.syncPage(slug, newContent);
+        } catch (e) {
+          console.warn(`GitHub 자동 동기화 실패 (${slug}):`, e);
+        }
+
         updatedPages.push(slug);
         logEntry.steps.push({ step: 'synthesize', page: slug, success: true });
       }

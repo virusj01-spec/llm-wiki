@@ -290,6 +290,8 @@ export async function renderDashboard() {
 export async function renderSettings() {
   const apiKey = await db.getSetting('apiKey') || '';
   const masked = apiKey ? apiKey.slice(0, 6) + '••••••' + apiKey.slice(-4) : '';
+  const ghToken = await db.getSetting('githubToken') || '';
+  const ghRepo = await db.getSetting('githubRepo') || '';
 
   return `
     <div class="screen-header">
@@ -305,6 +307,27 @@ export async function renderSettings() {
           <button id="btnSaveApi" class="btn-primary-sm">저장</button>
         </div>
         ${masked ? `<p class="setting-hint">현재: ${masked}</p>` : '<p class="setting-hint">https://aistudio.google.com/apikey 에서 발급</p>'}
+      </div>
+    </div>
+
+    <div class="settings-group" id="githubSettingsBlock">
+      <h3>🐙 GitHub 자동 동기화 (Obsidian)</h3>
+      <p class="setting-hint" style="margin-bottom:0.8rem">처리된 위키를 GitHub 저장소에 자동으로 Push합니다.</p>
+      <div class="setting-row">
+        <label>GitHub Token (Repo 권한 필요)</label>
+        <div class="setting-input-wrap">
+          <input id="inputGhToken" type="password" class="setting-input" placeholder="ghp_xxxxxxxx" value="${escHtml(ghToken)}">
+        </div>
+      </div>
+      <div class="setting-row">
+        <label>저장소 경로 (username/repo)</label>
+        <div class="setting-input-wrap">
+          <input id="inputGhRepo" type="text" class="setting-input" placeholder="예: virusj01-spec/llm-wiki" value="${escHtml(ghRepo)}">
+        </div>
+      </div>
+      <div class="setting-row">
+        <button id="btnSaveGithub" class="btn-primary-sm" style="width:100%; margin-bottom: 0.5rem">GitHub 설정 저장</button>
+        <button id="btnSyncGithubNow" class="btn-secondary-sm" style="width:100%">🚀 전체 페이지 지금 동기화</button>
       </div>
     </div>
 

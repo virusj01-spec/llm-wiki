@@ -4,6 +4,7 @@
 import db from './db.js';
 import { pipeline, DEFAULT_SCHEMA } from './pipeline.js';
 import * as UI from './ui.js';
+import github from './github.js';
 
 let activeTab = 'inbox';
 
@@ -263,6 +264,49 @@ function bindSettingsEvents() {
       if (key) {
         await db.setSetting('apiKey', key);
         showToast('API 키가 저장되었습니다 ✅');
+      }
+    });
+  }
+
+  // GitHub Settings
+  const btnGhSave = document.getElementById('btnSaveGithub');
+  if (btnGhSave) {
+    btnGhSave.addEventListener('click', async () => {
+      const token = document.getElementById('inputGhToken').value.trim();
+      const repo = document.getElementById('inputGhRepo').value.trim();
+      await db.setSetting('githubToken', token);
+      await db.setSetting('githubRepo', repo);
+      showToast('GitHub 연동 정보가 저장되었습니다 🐙');
+    });
+  }
+
+  // GitHub Sync All
+  const btnGhSync = document.getElementById('btnSyncGithubNow');
+  if (btnGhSync) {
+    btnGhSync.addEventListener('click', async () => {
+      const overlay = document.getElementById('progressOverlay');
+      const text = document.getElementById('progressText');
+      
+      const opts = await github.getOptions();
+      if (!github.isConfigured(opts)) {
+        showToast('먼저 GitHub Token과 저장소 경로를 저장해주세요.');
+        return;
+      }
+      
+      if (overlay) { overlay.classList.remove('hidden'); if(text) text.textContent = 'GitHub에 전체 위키 동기화 중...'; }
+      
+      try {
+        const { successCount, errors } = await github.syncAllPages();
+        if (errors.length > 0) {
+          showToast(`동기화 성공: ${successCount}개 / 실패: ${errors.length}개`);
+          console.error(errors);
+        } else {
+          showToast(`${successCount}개 위키 페이지 동기화 완료! 🚀`);
+        }
+      } catch (e) {
+        showToast('동기화 오류: ' + e.message);
+      } finally {
+        if (overlay) overlay.classList.add('hidden');
       }
     });
   }
