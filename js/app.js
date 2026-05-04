@@ -326,6 +326,14 @@ function bindSettingsEvents() {
 }
 
 function bindChatEvents() {
+  const btnClear = document.getElementById('btnClearChat');
+  if (btnClear) {
+    btnClear.addEventListener('click', async () => {
+      UI.clearChatHistory();
+      await navigate('chat');
+    });
+  }
+
   const btn = document.getElementById('btnSendChat');
   const input = document.getElementById('chatInput');
 
@@ -348,14 +356,23 @@ function bindChatEvents() {
           }
         }
 
+        let historyText = '';
+        const recentHistory = UI.chatHistory.slice(-5, -1);
+        if (recentHistory.length > 0) {
+          historyText = '\\n\\n[최근 대화 맥락]\\n';
+          for(const m of recentHistory) {
+            historyText += `${m.role === 'user' ? '사용자' : 'AI'}: ${m.text}\\n`;
+          }
+        }
+
         const prompt = `당신은 사용자의 업무일지 위키를 기반으로 답변하는 똑똑한 AI 어시스턴트입니다.
 제공된 위키 데이터를 바탕으로 사용자의 질문에 정확하게 답변하세요.
 만약 위키 데이터에 관련 내용이 없다면 "위키에 관련 내용이 없습니다"라고 밝힌 후 일반적인 지식으로 답변하세요.
 답변은 마크다운 형식으로 보기 좋게 정리해서 제공하세요.
 
-${context}
+${context}${historyText}
 
-사용자 질문: ${text}`;
+사용자 최신 질문: ${text}`;
 
         const { default: gemini } = await import('./gemini.js');
         const reply = await gemini.flash(prompt, { maxTokens: 1024 });
@@ -375,6 +392,8 @@ ${context}
 }
 
 function appendChatMessage(role, text, isLoading = false) {
+  if (!isLoading) UI.chatHistory.push({ role, text });
+  
   const chatMsgs = document.getElementById('chatMessages');
   if (!chatMsgs) return null;
   const id = 'msg-' + Date.now();
@@ -398,6 +417,7 @@ function appendChatMessage(role, text, isLoading = false) {
 }
 
 function updateChatMessage(id, text) {
+  UI.chatHistory.push({ role: 'bot', text });
   const div = document.getElementById(id);
   if (div) {
     div.classList.remove('loading');

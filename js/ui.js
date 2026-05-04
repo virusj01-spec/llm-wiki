@@ -162,18 +162,34 @@ export function clearCurrentPage() { currentPage = null; }
 // ============================================================
 // CHAT
 // ============================================================
+export let chatHistory = [];
+export function clearChatHistory() { chatHistory = []; }
+
 export async function renderChat() {
+  const msgsHtml = chatHistory.length === 0 ? `
+        <div class="chat-msg bot">
+          <div class="msg-bubble">안녕하세요! 지금까지 작성하신 위키 내용을 바탕으로 답변해 드릴 수 있습니다. 궁금한 점을 물어보세요!</div>
+        </div>
+  ` : chatHistory.map(m => `
+        <div class="chat-msg ${m.role}">
+          <div class="msg-bubble ${m.role === 'bot' ? 'markdown-body' : ''}">
+            ${m.role === 'bot' ? renderMarkdown(m.text) : escHtml(m.text)}
+          </div>
+        </div>
+  `).join('');
+
   return `
-    <div class="screen-header">
-      <h1>💬 Chat</h1>
-      <p class="screen-subtitle">내 업무일지(위키)를 바탕으로 질문하세요</p>
+    <div class="screen-header" style="display:flex; justify-content:space-between; align-items:flex-start;">
+      <div>
+        <h1>💬 Chat</h1>
+        <p class="screen-subtitle">내 업무일지(위키)를 바탕으로 질문하세요</p>
+      </div>
+      <button id="btnClearChat" class="btn-icon" title="새 대화 시작" style="width:38px;height:38px;font-size:1rem;">🧹</button>
     </div>
     
     <div class="chat-container">
       <div id="chatMessages" class="chat-messages">
-        <div class="chat-msg bot">
-          <div class="msg-bubble">안녕하세요! 지금까지 작성하신 위키 내용을 바탕으로 답변해 드릴 수 있습니다. 궁금한 점을 물어보세요!</div>
-        </div>
+        ${msgsHtml}
       </div>
       
       <div class="chat-input-wrap">
