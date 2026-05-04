@@ -271,11 +271,33 @@ function bindSettingsEvents() {
   const btnMd = document.getElementById('btnExportMd');
   if (btnMd) {
     btnMd.addEventListener('click', async () => {
-      const files = await db.exportToMarkdown();
-      for (const [name, content] of Object.entries(files)) {
-        downloadFile(name, content, 'text/markdown');
+      try {
+        const files = await db.exportToMarkdown();
+        if (window.JSZip) {
+          const zip = new window.JSZip();
+          for (const [name, content] of Object.entries(files)) {
+            zip.file(name, content);
+          }
+          const blob = await zip.generateAsync({ type: 'blob' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'llm-wiki-export.zip';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          showToast(`${Object.keys(files).length}개 파일 ZIP 내보내기 완료`);
+        } else {
+          // Fallback
+          for (const [name, content] of Object.entries(files)) {
+            downloadFile(name, content, 'text/markdown');
+          }
+          showToast(`${Object.keys(files).length}개 파일 내보내기 완료`);
+        }
+      } catch (e) {
+        showToast('내보내기 오류: ' + e.message);
       }
-      showToast(`${Object.keys(files).length}개 파일 내보내기 완료`);
     });
   }
 
