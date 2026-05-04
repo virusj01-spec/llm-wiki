@@ -51,19 +51,20 @@ ${memoText}`;
       prompt += `\\n\\n[주의: 첨부파일 데이터도 함께 제공되었습니다. 텍스트와 첨부파일을 모두 고려하여 적절한 위키 페이지를 선택하세요.]`;
     }
 
-    prompt += `\\n\\nJSON 배열만 반환하세요 (다른 텍스트 없이):`;
-
-    const options = { temperature: 0.1, maxTokens: 256 };
+    const options = { temperature: 0.1, maxTokens: 256, json: true };
     if (attachment) options.attachment = attachment;
 
     const raw = await gemini.flash(prompt, options);
     try {
-      const cleaned = raw.replace(/```json?\\n?/g, '').replace(/```/g, '').trim();
+      // JSON 모드 시 바로 파싱 가능성이 높지만 방어적 파싱
+      const cleaned = raw.replace(/```json?\\n?/gi, '').replace(/```/g, '').trim();
       const slugs = JSON.parse(cleaned);
       if (!Array.isArray(slugs)) throw new Error('배열이 아닙니다');
-      return slugs.filter(s => typeof s === 'string');
-    } catch {
-      console.warn('라우팅 파싱 실패, 기본값 사용:', raw);
+      
+      const validSlugs = slugs.filter(s => typeof s === 'string');
+      return validSlugs.length > 0 ? validSlugs : ['daily-work'];
+    } catch (e) {
+      console.warn('라우팅 파싱 실패, 기본값 사용:', raw, e);
       return ['daily-work'];
     }
   }

@@ -37,6 +37,10 @@ class GeminiClient {
       }
     };
 
+    if (options.json) {
+      body.generationConfig.responseMimeType = "application/json";
+    }
+
     let lastError;
     const maxRetries = options.retries ?? 2;
 
