@@ -78,10 +78,11 @@ class WikiDB {
   }
 
   // --- Memos ---
-  async addMemo(text) {
+  async addMemo(text, attachment = null) {
     const memo = {
       id: 'memo-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-      text: text.trim(),
+      text: (text || '').trim(),
+      attachment: attachment,
       status: 'pending', // pending | processing | done | error
       created: new Date().toISOString(),
       result: null

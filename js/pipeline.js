@@ -29,15 +29,15 @@ class Pipeline {
   }
 
   // --- 1. Routing ---
-  async route(memoText) {
+  async route(memoText, attachment) {
     this._emit('route', '관련 페이지를 찾는 중...');
 
     const pages = await db.getPages();
     const schemaDesc = pages.map(p =>
       `- slug: "${p.slug}" | title: "${p.title}" | desc: "${p.description}"`
-    ).join('\n');
+    ).join('\\n');
 
-    const prompt = `당신은 위키 라우터입니다. 아래의 메모를 읽고, 관련 있는 위키 페이지의 slug를 JSON 배열로 반환하세요.
+    let prompt = `당신은 위키 라우터입니다. 아래의 메모를 읽고, 관련 있는 위키 페이지의 slug를 JSON 배열로 반환하세요.
 최소 1개, 최대 3개의 관련 페이지를 선택하세요.
 기존 페이지에 맞지 않으면 가장 가까운 것을 선택하세요.
 
@@ -45,13 +45,20 @@ class Pipeline {
 ${schemaDesc}
 
 메모:
-${memoText}
+${memoText}`;
 
-JSON 배열만 반환하세요 (다른 텍스트 없이):`;
+    if (attachment) {
+      prompt += `\\n\\n[주의: 첨부파일 데이터도 함께 제공되었습니다. 텍스트와 첨부파일을 모두 고려하여 적절한 위키 페이지를 선택하세요.]`;
+    }
 
-    const raw = await gemini.flash(prompt, { temperature: 0.1, maxTokens: 256 });
+    prompt += `\\n\\nJSON 배열만 반환하세요 (다른 텍스트 없이):`;
+
+    const options = { temperature: 0.1, maxTokens: 256 };
+    if (attachment) options.attachment = attachment;
+
+    const raw = await gemini.flash(prompt, options);
     try {
-      const cleaned = raw.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+      const cleaned = raw.replace(/```json?\\n?/g, '').replace(/```/g, '').trim();
       const slugs = JSON.parse(cleaned);
       if (!Array.isArray(slugs)) throw new Error('배열이 아닙니다');
       return slugs.filter(s => typeof s === 'string');
@@ -62,14 +69,14 @@ JSON 배열만 반환하세요 (다른 텍스트 없이):`;
   }
 
   // --- 2. Synthesis ---
-  async synthesize(page, memoText) {
+  async synthesize(page, memoText, attachment) {
     this._emit('synthesize', `"${page.title}" 페이지 업데이트 중...`);
 
     const now = new Date();
     const dateStr = now.toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit' });
     const timeStr = now.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit' });
 
-    const prompt = `당신은 개인 위키 편집자입니다. 기존 위키 페이지에 새로운 메모 내용을 통합하여 문서를 재작성하세요.
+    let prompt = `당신은 개인 위키 편집자입니다. 기존 위키 페이지에 새로운 메모 내용을 통합하여 문서를 재작성하세요.
 
 ## 규칙
 1. 기존 정보를 절대 삭제하지 마세요 (Preserve and Extend)
@@ -83,12 +90,18 @@ JSON 배열만 반환하세요 (다른 텍스트 없이):`;
 ${page.content}
 
 ## 새로운 메모 (${dateStr} ${timeStr} 작성)
-${memoText}
+${memoText}`;
 
-## 출력
-통합된 위키 페이지 전체를 마크다운으로 출력하세요 (프론트매터 없이, 본문만):`;
+    if (attachment) {
+      prompt += `\\n\\n[주의: 첨부파일 데이터가 함께 제공되었습니다. 첨부파일의 내용도 상세히 분석하여 위키에 알맞게 통합하세요.]`;
+    }
 
-    return await gemini.pro(prompt, { temperature: 0.3, maxTokens: 4096 });
+    prompt += `\\n\\n## 출력\\n통합된 위키 페이지 전체를 마크다운으로 출력하세요 (프론트매터 없이, 본문만):`;
+
+    const options = { temperature: 0.3, maxTokens: 4096 };
+    if (attachment) options.attachment = attachment;
+
+    return await gemini.pro(prompt, options);
   }
 
   // --- Full Pipeline ---
@@ -106,7 +119,7 @@ ${memoText}
 
     try {
       // Step 1: Route
-      const slugs = await this.route(memo.text);
+      const slugs = await this.route(memo.text, memo.attachment);
       logEntry.steps.push({ step: 'route', result: slugs });
 
       // Step 2: Synthesize each page
@@ -124,7 +137,7 @@ ${memoText}
           };
         }
 
-        const newContent = await this.synthesize(page, memo.text);
+        const newContent = await this.synthesize(page, memo.text, memo.attachment);
         page.content = newContent;
         await db.savePage(page);
         updatedPages.push(slug);

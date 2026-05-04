@@ -77,15 +77,57 @@ function bindScreenEvents(tab) {
 }
 
 function bindInboxEvents() {
-  // Add memo
+  // File & Add memo
   const btn = document.getElementById('btnAddMemo');
   const input = document.getElementById('memoInput');
+  const fileInput = document.getElementById('memoFile');
+  const attachDiv = document.getElementById('memoAttachment');
+  
+  let currentAttachment = null;
+
+  if (fileInput) {
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      if (file.name.endsWith('.txt') || file.name.endsWith('.md') || file.name.endsWith('.csv')) {
+        const text = await file.text();
+        input.value = (input.value ? input.value + '\\n\\n' : '') + `[문서 내용 첨부됨: ${file.name}]\\n${text}`;
+        fileInput.value = '';
+        currentAttachment = null;
+        if(attachDiv) { attachDiv.textContent = ''; attachDiv.classList.add('hidden'); }
+      } else if (file.type === 'application/pdf' || file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const base64 = ev.target.result.split(',')[1];
+          currentAttachment = { mimeType: file.type, data: base64, name: file.name };
+          if(attachDiv) {
+            attachDiv.innerHTML = `📄 ${file.name} <button id="btnRemoveFile" class="btn-icon" style="font-size:0.8rem;">❌</button>`;
+            attachDiv.classList.remove('hidden');
+            document.getElementById('btnRemoveFile').addEventListener('click', () => {
+              currentAttachment = null;
+              fileInput.value = '';
+              attachDiv.classList.add('hidden');
+            });
+          }
+        };
+        reader.readAsDataURL(file);
+      } else {
+        showToast('지원하지 않는 형식입니다 (TXT, PDF, 이미지 지원).');
+        fileInput.value = '';
+      }
+    });
+  }
+
   if (btn && input) {
     btn.addEventListener('click', async () => {
       const text = input.value.trim();
-      if (!text) return;
-      await db.addMemo(text);
+      if (!text && !currentAttachment) return;
+      await db.addMemo(text, currentAttachment);
       input.value = '';
+      currentAttachment = null;
+      if (fileInput) fileInput.value = '';
+      if (attachDiv) attachDiv.classList.add('hidden');
       await navigate('inbox');
     });
     input.addEventListener('keydown', (e) => {

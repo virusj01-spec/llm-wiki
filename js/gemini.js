@@ -19,8 +19,18 @@ class GeminiClient {
     const apiKey = await this.getApiKey();
     const url = `${this.baseUrl}/${model}:generateContent?key=${apiKey}`;
 
+    const parts = [{ text: prompt }];
+    if (options.attachment) {
+      parts.push({
+        inlineData: {
+          mimeType: options.attachment.mimeType,
+          data: options.attachment.data
+        }
+      });
+    }
+
     const body = {
-      contents: [{ parts: [{ text: prompt }] }],
+      contents: [{ parts: parts }],
       generationConfig: {
         temperature: options.temperature ?? 0.3,
         maxOutputTokens: options.maxTokens ?? 8192,
