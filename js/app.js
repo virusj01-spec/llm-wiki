@@ -84,51 +84,70 @@ function bindInboxEvents() {
   const fileInput = document.getElementById('memoFile');
   const attachDiv = document.getElementById('memoAttachment');
   
-  let currentAttachment = null;
+  let currentAttachments = [];
+
+  function renderAttachments() {
+    if (!attachDiv) return;
+    if (currentAttachments.length === 0) {
+      attachDiv.innerHTML = '';
+      attachDiv.classList.add('hidden');
+      return;
+    }
+    attachDiv.innerHTML = currentAttachments.map((att, idx) => `
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span>📄 ${escHtml(att.name)}</span>
+        <button class="btn-icon btn-remove-att" data-idx="${idx}" style="font-size:0.8rem; width:24px; height:24px; min-height:24px;">❌</button>
+      </div>
+    `).join('');
+    attachDiv.classList.remove('hidden');
+
+    attachDiv.querySelectorAll('.btn-remove-att').forEach(b => {
+      b.addEventListener('click', (e) => {
+        const idx = parseInt(e.currentTarget.dataset.idx, 10);
+        currentAttachments.splice(idx, 1);
+        renderAttachments();
+      });
+    });
+  }
 
   if (fileInput) {
     fileInput.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
+      const files = Array.from(e.target.files);
+      if (files.length === 0) return;
 
-      if (file.name.endsWith('.txt') || file.name.endsWith('.md') || file.name.endsWith('.csv')) {
-        const text = await file.text();
-        input.value = (input.value ? input.value + '\\n\\n' : '') + `[문서 내용 첨부됨: ${file.name}]\\n${text}`;
-        fileInput.value = '';
-        currentAttachment = null;
-        if(attachDiv) { attachDiv.textContent = ''; attachDiv.classList.add('hidden'); }
-      } else if (file.type === 'application/pdf' || file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const base64 = ev.target.result.split(',')[1];
-          currentAttachment = { mimeType: file.type, data: base64, name: file.name };
-          if(attachDiv) {
-            attachDiv.innerHTML = `📄 ${file.name} <button id="btnRemoveFile" class="btn-icon" style="font-size:0.8rem;">❌</button>`;
-            attachDiv.classList.remove('hidden');
-            document.getElementById('btnRemoveFile').addEventListener('click', () => {
-              currentAttachment = null;
-              fileInput.value = '';
-              attachDiv.classList.add('hidden');
-            });
-          }
-        };
-        reader.readAsDataURL(file);
-      } else {
-        showToast('지원하지 않는 형식입니다 (TXT, PDF, 이미지 지원).');
-        fileInput.value = '';
+      for (const file of files) {
+        if (file.name.endsWith('.txt') || file.name.endsWith('.md') || file.name.endsWith('.csv')) {
+          const text = await file.text();
+          input.value = (input.value ? input.value + '\\n\\n' : '') + `[문서 내용 첨부됨: ${file.name}]\\n${text}`;
+        } else if (file.type === 'application/pdf' || file.type.startsWith('image/')) {
+          // Promise로 감싸서 비동기 순차 처리
+          await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              const base64 = ev.target.result.split(',')[1];
+              currentAttachments.push({ mimeType: file.type, data: base64, name: file.name });
+              resolve();
+            };
+            reader.readAsDataURL(file);
+          });
+        } else {
+          showToast(`지원하지 않는 파일 형식입니다: ${file.name}`);
+        }
       }
+      renderAttachments();
+      fileInput.value = '';
     });
   }
 
   if (btn && input) {
     btn.addEventListener('click', async () => {
       const text = input.value.trim();
-      if (!text && !currentAttachment) return;
-      await db.addMemo(text, currentAttachment);
+      if (!text && currentAttachments.length === 0) return;
+      await db.addMemo(text, currentAttachments);
       input.value = '';
-      currentAttachment = null;
+      currentAttachments = [];
       if (fileInput) fileInput.value = '';
-      if (attachDiv) attachDiv.classList.add('hidden');
+      renderAttachments();
       await navigate('inbox');
     });
     input.addEventListener('keydown', (e) => {

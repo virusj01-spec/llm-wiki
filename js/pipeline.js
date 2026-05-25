@@ -30,7 +30,7 @@ class Pipeline {
   }
 
   // --- 1. Routing ---
-  async route(memoText, attachment) {
+  async route(memoText, attachments = []) {
     this._emit('route', '관련 페이지를 찾는 중...');
 
     const pages = await db.getPages();
@@ -48,12 +48,12 @@ ${schemaDesc}
 메모:
 ${memoText}`;
 
-    if (attachment) {
+    if (attachments.length > 0) {
       prompt += `\\n\\n[주의: 첨부파일 데이터도 함께 제공되었습니다. 텍스트와 첨부파일을 모두 고려하여 적절한 위키 페이지를 선택하세요.]`;
     }
 
     const options = { temperature: 0.1, maxTokens: 256, json: true };
-    if (attachment) options.attachment = attachment;
+    if (attachments.length > 0) options.attachments = attachments;
 
     const raw = await gemini.flash(prompt, options);
     try {
@@ -71,7 +71,7 @@ ${memoText}`;
   }
 
   // --- 2. Synthesis ---
-  async synthesize(page, memoText, attachment) {
+  async synthesize(page, memoText, attachments = []) {
     this._emit('synthesize', `"${page.title}" 페이지 업데이트 중...`);
 
     const now = new Date();
@@ -94,14 +94,14 @@ ${page.content}
 ## 새로운 메모 (${dateStr} ${timeStr} 작성)
 ${memoText}`;
 
-    if (attachment) {
+    if (attachments.length > 0) {
       prompt += `\\n\\n[주의: 첨부파일 데이터가 함께 제공되었습니다. 첨부파일의 내용도 상세히 분석하여 위키에 알맞게 통합하세요.]`;
     }
 
     prompt += `\\n\\n## 출력\\n통합된 위키 페이지 전체를 마크다운으로 출력하세요 (프론트매터 없이, 본문만):`;
 
     const options = { temperature: 0.3, maxTokens: 4096 };
-    if (attachment) options.attachment = attachment;
+    if (attachments.length > 0) options.attachments = attachments;
 
     return await gemini.pro(prompt, options);
   }
@@ -120,8 +120,9 @@ ${memoText}`;
     const logEntry = { memoId, memoText: memo.text, steps: [] };
 
     try {
+      const attachments = memo.attachments || (memo.attachment ? [memo.attachment] : []);
       // Step 1: Route
-      const slugs = await this.route(memo.text, memo.attachment);
+      const slugs = await this.route(memo.text, attachments);
       logEntry.steps.push({ step: 'route', result: slugs });
 
       // Step 2: Synthesize each page
@@ -134,12 +135,12 @@ ${memoText}`;
             title: slug,
             description: '',
             tags: [],
-            content: `# ${slug}\n\n`,
+            content: `# ${slug}\\n\\n`,
             created: new Date().toISOString()
           };
         }
 
-        const newContent = await this.synthesize(page, memo.text, memo.attachment);
+        const newContent = await this.synthesize(page, memo.text, attachments);
         page.content = newContent;
         await db.savePage(page);
 

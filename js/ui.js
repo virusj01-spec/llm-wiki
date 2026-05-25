@@ -27,10 +27,10 @@ export async function renderInbox() {
 
     <div class="memo-input-wrap">
       <textarea id="memoInput" class="memo-textarea" placeholder="업무 메모를 자유롭게 작성하세요...&#10;&#10;예: 오늘 고객사 미팅에서 API 응답 지연 문제 논의. 캐시 도입 검토 필요." rows="4"></textarea>
-      <div id="memoAttachment" class="memo-attachment hidden"></div>
+      <div id="memoAttachment" class="memo-attachment hidden" style="flex-direction:column; align-items:stretch; gap:0.3rem;"></div>
       <div class="memo-actions">
         <label class="btn-icon" title="파일 첨부 (텍스트, PDF, 이미지)">
-          📎<input type="file" id="memoFile" accept=".txt,.md,.csv,.pdf,image/*" style="display:none;">
+          📎<input type="file" id="memoFile" accept=".txt,.md,.csv,.pdf,image/*" multiple style="display:none;">
         </label>
         <button id="btnVoice" class="btn-icon" title="음성 입력">🎤</button>
         <button id="btnAddMemo" class="btn-primary-sm">메모 추가</button>
@@ -90,7 +90,9 @@ function memoCard(memo, showActions = false) {
         <span class="memo-status">${statusIcon}</span>
       </div>
       <p class="memo-text">${escHtml(preview)}</p>
-      ${memo.attachment ? `<div class="memo-attachment-badge">📎 ${escHtml(memo.attachment.name || '첨부파일')}</div>` : ''}
+      ${memo.attachments && memo.attachments.length > 0 ? 
+        memo.attachments.map(a => `<div class="memo-attachment-badge">📎 ${escHtml(a.name || '첨부파일')}</div>`).join(' ') 
+        : (memo.attachment ? `<div class="memo-attachment-badge">📎 ${escHtml(memo.attachment.name || '첨부파일')}</div>` : '')}
       ${memo.result?.routedTo ? `<div class="memo-routed">→ ${memo.result.routedTo.join(', ')}</div>` : ''}
       ${memo.result?.error ? `<div class="memo-error">${escHtml(memo.result.error)}</div>` : ''}
       ${showActions ? `

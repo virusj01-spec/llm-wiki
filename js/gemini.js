@@ -20,13 +20,19 @@ class GeminiClient {
     const url = `${this.baseUrl}/${model}:generateContent?key=${apiKey}`;
 
     const parts = [{ text: prompt }];
-    if (options.attachment) {
-      parts.push({
-        inlineData: {
-          mimeType: options.attachment.mimeType,
-          data: options.attachment.data
-        }
-      });
+    
+    // 호환성 유지 및 다중 첨부파일 지원
+    const attachments = options.attachments || (options.attachment ? [options.attachment] : []);
+    
+    if (attachments.length > 0) {
+      for (const att of attachments) {
+        parts.push({
+          inlineData: {
+            mimeType: att.mimeType,
+            data: att.data
+          }
+        });
+      }
     }
 
     const body = {
