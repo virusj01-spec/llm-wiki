@@ -134,7 +134,8 @@ ${memoText}`;
     const logEntry = { memoId, memoText: memo.text, steps: [] };
 
     try {
-      const attachments = memo.attachments || (memo.attachment ? [memo.attachment] : []);
+      // 이제 OCR은 업로드 시점에 완료 → pipeline에서는 빈 첨부파일로 처리
+      const attachments = [];
       // Step 1: Route
       const slugs = await this.route(memo.text, attachments);
       logEntry.steps.push({ step: 'route', result: slugs });
