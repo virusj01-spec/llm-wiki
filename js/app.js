@@ -5,6 +5,7 @@ import db from './db.js';
 import { pipeline, DEFAULT_SCHEMA } from './pipeline.js';
 import * as UI from './ui.js';
 import github from './github.js';
+import gemini from './gemini.js';
 
 let activeTab = 'inbox';
 
@@ -265,9 +266,8 @@ async function processMemo(id) {
   const text = document.getElementById('progressText');
   if (overlay) overlay.classList.remove('hidden');
 
-  pipeline.onProgress = (step, detail) => {
-    if (text) text.textContent = detail;
-  };
+  pipeline.onProgress = (step, detail) => { if (text) text.textContent = detail; };
+  gemini.onRateLimit = (msg) => { if (text) text.textContent = msg; };
 
   try {
     await pipeline.process(id);
@@ -276,6 +276,7 @@ async function processMemo(id) {
     await sleep(2000);
   }
 
+  gemini.onRateLimit = null;
   if (overlay) overlay.classList.add('hidden');
   await navigate('inbox');
 }
@@ -285,17 +286,27 @@ async function processAllMemos() {
   const text = document.getElementById('progressText');
   if (overlay) overlay.classList.remove('hidden');
 
-  pipeline.onProgress = (step, detail) => {
-    if (text) text.textContent = detail;
-  };
+  pipeline.onProgress = (step, detail) => { if (text) text.textContent = detail; };
+  gemini.onRateLimit = (msg) => { if (text) text.textContent = msg; };
 
   try {
-    await pipeline.processAll();
+    const pending = await db.getPendingMemos();
+    for (let i = 0; i < pending.length; i++) {
+      if (text) text.textContent = `(${i + 1}/${pending.length}) 처리 중...`;
+      try {
+        await pipeline.process(pending[i].id);
+      } catch (e) {
+        console.warn('메모 처리 실패:', pending[i].id, e.message);
+      }
+      // 메모 간 딜레이: 무료 티어 rate limit 방지 (3초)
+      if (i < pending.length - 1) await sleep(3000);
+    }
   } catch (e) {
     if (text) text.textContent = '오류: ' + e.message;
     await sleep(2000);
   }
 
+  gemini.onRateLimit = null;
   if (overlay) overlay.classList.add('hidden');
   await navigate('inbox');
 }

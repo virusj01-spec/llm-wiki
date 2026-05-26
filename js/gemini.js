@@ -5,6 +5,7 @@
 class GeminiClient {
   constructor() {
     this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models';
+    this.onRateLimit = null; // callback(message) for rate limit UI feedback
   }
 
   async getApiKey() {
@@ -48,7 +49,7 @@ class GeminiClient {
     }
 
     let lastError;
-    const maxRetries = options.retries ?? 2;
+    const maxRetries = options.retries ?? 3;
 
     for (let i = 0; i <= maxRetries; i++) {
       try {
@@ -62,8 +63,11 @@ class GeminiClient {
           const err = await res.json().catch(() => ({}));
           const msg = err.error?.message || res.statusText;
           if (res.status === 429) {
-            // Rate limit — wait and retry
-            await this._sleep(2000 * (i + 1));
+            // 에러 메시지에서 "retry in Xs" 파싱
+            const match = msg.match(/retry in ([0-9.]+)s/i);
+            const waitSec = match ? Math.ceil(parseFloat(match[1])) + 2 : 60;
+            this._emit429(`⏳ API 한도 초과 — ${waitSec}초 후 재시도...`);
+            await this._sleep(waitSec * 1000);
             lastError = new Error(`Rate limit: ${msg}`);
             continue;
           }
@@ -90,6 +94,11 @@ class GeminiClient {
   async pro(prompt, options = {}) {
     // 무료 티어 Pro 한도 초과(Limit: 0) 문제로 인해 Flash 모델로 대체
     return this.generate('gemini-2.5-flash', prompt, options);
+  }
+
+  _emit429(msg) {
+    if (this.onRateLimit) this.onRateLimit(msg);
+    else console.warn(msg);
   }
 
   _sleep(ms) {
