@@ -52,17 +52,31 @@ ${memoText}`;
       prompt += `\n\n[주의: 첨부파일 데이터도 함께 제공되었습니다. 텍스트와 첨부파일을 모두 고려하여 적절한 위키 페이지를 선택하세요.]`;
     }
 
-    const options = { temperature: 0.1, maxTokens: 256, json: true };
+    // json 모드 제거: Gemini가 배열 대신 객체를 반환하면 파싱 실패하여 항상 daily-work 폴백되는 버그 수정
+    const options = { temperature: 0.1, maxTokens: 512 };
     if (attachments.length > 0) options.attachments = attachments;
 
     const raw = await gemini.flash(prompt, options);
     try {
-      // JSON 모드 시 바로 파싱 가능성이 높지만 방어적 파싱
-      const cleaned = raw.replace(/```json?\\n?/gi, '').replace(/```/g, '').trim();
-      const slugs = JSON.parse(cleaned);
-      if (!Array.isArray(slugs)) throw new Error('배열이 아닙니다');
-      
-      const validSlugs = slugs.filter(s => typeof s === 'string');
+      // 마크다운 코드블록 제거 후 JSON 배열 추출
+      const cleaned = raw.replace(/```json?\n?/gi, '').replace(/```/g, '').trim();
+
+      let parsed;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        // 응답 내 JSON 배열 패턴 직접 추출
+        const match = cleaned.match(/\[[\s\S]*?\]/);
+        if (match) parsed = JSON.parse(match[0]);
+        else throw new Error('JSON 배열 없음');
+      }
+
+      // 배열 또는 객체({"pages":[...]} 등) 모두 처리
+      const arr = Array.isArray(parsed)
+        ? parsed
+        : Object.values(parsed).find(v => Array.isArray(v)) || [];
+
+      const validSlugs = arr.filter(s => typeof s === 'string' && s.trim());
       return validSlugs.length > 0 ? validSlugs : ['daily-work'];
     } catch (e) {
       console.warn('라우팅 파싱 실패, 기본값 사용:', raw, e);

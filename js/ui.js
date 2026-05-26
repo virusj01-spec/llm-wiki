@@ -15,7 +15,10 @@ let currentPage = null; // for wiki detail view
 export async function renderInbox() {
   const memos = await db.getMemos();
   const pending = memos.filter(m => m.status === 'pending');
-  const done = memos.filter(m => m.status === 'done').slice(0, 10);
+  const done = memos
+    .filter(m => m.status === 'done')
+    .sort((a, b) => new Date(b.created) - new Date(a.created))
+    .slice(0, 10);
   const processing = memos.filter(m => m.status === 'processing');
   const errors = memos.filter(m => m.status === 'error');
 
@@ -63,7 +66,7 @@ export async function renderInbox() {
     ${done.length > 0 ? `
       <div class="memo-section">
         <h3>✅ 최근 처리 완료</h3>
-        ${done.sort((a,b)=>new Date(b.created)-new Date(a.created)).map(m => memoCard(m)).join('')}
+        ${done.map(m => memoCard(m)).join('')}
       </div>
     ` : ''}
 
