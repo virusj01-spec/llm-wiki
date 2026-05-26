@@ -78,37 +78,11 @@ function bindScreenEvents(tab) {
 }
 
 function bindInboxEvents() {
-  // File & Add memo
   const btn = document.getElementById('btnAddMemo');
   const input = document.getElementById('memoInput');
   const fileInput = document.getElementById('memoFile');
-  const attachDiv = document.getElementById('memoAttachment');
-  
-  let currentAttachments = [];
 
-  function renderAttachments() {
-    if (!attachDiv) return;
-    if (currentAttachments.length === 0) {
-      attachDiv.innerHTML = '';
-      attachDiv.classList.add('hidden');
-      return;
-    }
-    attachDiv.innerHTML = currentAttachments.map((att, idx) => `
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span>📄 ${escHtml(att.name)}</span>
-        <button class="btn-icon btn-remove-att" data-idx="${idx}" style="font-size:0.8rem; width:24px; height:24px; min-height:24px;">❌</button>
-      </div>
-    `).join('');
-    attachDiv.classList.remove('hidden');
-
-    attachDiv.querySelectorAll('.btn-remove-att').forEach(b => {
-      b.addEventListener('click', (e) => {
-        const idx = parseInt(e.currentTarget.dataset.idx, 10);
-        currentAttachments.splice(idx, 1);
-        renderAttachments();
-      });
-    });
-  }
+  let pendingAttachmentIds = [];
 
   if (fileInput) {
     fileInput.addEventListener('change', async (e) => {
@@ -118,23 +92,42 @@ function bindInboxEvents() {
       for (const file of files) {
         if (file.name.endsWith('.txt') || file.name.endsWith('.md') || file.name.endsWith('.csv')) {
           const text = await file.text();
-          input.value = (input.value ? input.value + '\\n\\n' : '') + `[문서 내용 첨부됨: ${file.name}]\\n${text}`;
-        } else if (file.type === 'application/pdf' || file.type.startsWith('image/')) {
-          // Promise로 감싸서 비동기 순차 처리
-          await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-              const base64 = ev.target.result.split(',')[1];
-              currentAttachments.push({ mimeType: file.type, data: base64, name: file.name });
-              resolve();
-            };
-            reader.readAsDataURL(file);
-          });
+          input.value = (input.value ? input.value + '\n\n' : '') + `[문서: ${file.name}]\n${text}`;
+
+        } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+          showToast(`📷 ${file.name} 분석 중...`);
+          try {
+            const arrayBuffer = await file.arrayBuffer();
+
+            // ① 원본 파일을 별도 스토어에 저장 (메모 객체와 분리)
+            const saved = await db.addAttachment({ name: file.name, mimeType: file.type, data: arrayBuffer });
+            pendingAttachmentIds.push(saved.id);
+
+            // ② base64 변환 후 Gemini OCR
+            const bytes = new Uint8Array(arrayBuffer);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i += 8192) {
+              binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+            }
+            const base64 = btoa(binary);
+
+            const { default: gemini } = await import('./gemini.js');
+            const ocrText = await gemini.generate('gemini-2.5-flash',
+              `이 ${file.type.startsWith('image/') ? '이미지' : 'PDF'}의 내용을 최대한 상세히 텍스트로 추출하고 설명하세요.\n표, 수식, 도표가 있으면 마크다운 형식으로 변환하세요.\n파일명: ${file.name}`,
+              { temperature: 0.1, maxTokens: 2048, attachments: [{ mimeType: file.type, data: base64 }] }
+            );
+
+            input.value = (input.value ? input.value + '\n\n' : '') + `[📎 ${file.name} — OCR 결과]\n${ocrText}`;
+            showToast(`✅ ${file.name} 분석 완료`);
+
+          } catch (err) {
+            showToast(`❌ ${file.name} 분석 실패: ${err.message}`);
+          }
+
         } else {
           showToast(`지원하지 않는 파일 형식입니다: ${file.name}`);
         }
       }
-      renderAttachments();
       fileInput.value = '';
     });
   }
@@ -142,12 +135,10 @@ function bindInboxEvents() {
   if (btn && input) {
     btn.addEventListener('click', async () => {
       const text = input.value.trim();
-      if (!text && currentAttachments.length === 0) return;
-      await db.addMemo(text, currentAttachments);
+      if (!text && pendingAttachmentIds.length === 0) return;
+      await db.addMemo(text, pendingAttachmentIds);
       input.value = '';
-      currentAttachments = [];
-      if (fileInput) fileInput.value = '';
-      renderAttachments();
+      pendingAttachmentIds = [];
       await navigate('inbox');
     });
     input.addEventListener('keydown', (e) => {
@@ -202,6 +193,69 @@ function bindInboxEvents() {
     btn.addEventListener('click', async (e) => {
       await db.deleteMemo(e.target.dataset.id);
       await navigate('inbox');
+    });
+  });
+
+  // Expand / collapse memo text
+  document.querySelectorAll('.btn-expand-memo').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const expanded = btn.dataset.expanded === 'true';
+      const card = btn.closest('.memo-card');
+      const preview = card?.querySelector('.memo-preview');
+      if (!preview) return;
+
+      if (expanded) {
+        preview.textContent = preview.dataset.short;
+        btn.textContent = '▼ 더보기';
+        btn.dataset.expanded = 'false';
+      } else {
+        preview.textContent = preview.dataset.full;
+        btn.textContent = '▲ 접기';
+        btn.dataset.expanded = 'true';
+      }
+    });
+  });
+
+  // 첨부파일 원본 보기 모달
+  document.querySelectorAll('.btn-view-att').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const attId = btn.dataset.attId;
+      const att = await db.getAttachment(attId);
+      if (!att) { showToast('첨부파일을 찾을 수 없습니다.'); return; }
+
+      const blob = new Blob([att.data], { type: att.mimeType });
+      const url = URL.createObjectURL(blob);
+      const isImage = att.mimeType.startsWith('image/');
+
+      const modal = document.createElement('div');
+      modal.style.cssText = `
+        position:fixed;inset:0;z-index:500;
+        background:rgba(0,0,0,0.92);
+        display:flex;flex-direction:column;
+        align-items:center;justify-content:flex-start;
+        padding:1rem;overflow:auto;
+      `;
+      modal.innerHTML = `
+        <div style="width:100%;max-width:600px;margin:0 auto;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;">
+            <span style="color:#9090b0;font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📎 ${escHtml(att.name)}</span>
+            <button id="btnCloseModal" style="background:none;border:1px solid rgba(255,255,255,0.2);color:#f0f0f8;border-radius:8px;padding:0.4rem 0.8rem;cursor:pointer;font-size:0.85rem;flex-shrink:0;margin-left:0.5rem;">✕ 닫기</button>
+          </div>
+          ${isImage
+            ? `<img src="${url}" style="width:100%;border-radius:10px;display:block;" alt="${escHtml(att.name)}">`
+            : `<iframe src="${url}" style="width:100%;height:80vh;border:none;border-radius:10px;" title="${escHtml(att.name)}"></iframe>`
+          }
+        </div>
+      `;
+      document.body.appendChild(modal);
+
+      modal.querySelector('#btnCloseModal').addEventListener('click', () => {
+        URL.revokeObjectURL(url);
+        modal.remove();
+      });
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) { URL.revokeObjectURL(url); modal.remove(); }
+      });
     });
   });
 }
@@ -434,19 +488,19 @@ function bindChatEvents() {
 
       try {
         const pages = await db.getPages();
-        let context = '내 위키 데이터:\\n\\n';
+        let context = '내 위키 데이터:\n\n';
         for (const p of pages) {
           if (p.content && p.content.length > 50) {
-            context += `--- Page: ${p.title} ---\\n${p.content}\\n\\n`;
+            context += `--- Page: ${p.title} ---\n${p.content}\n\n`;
           }
         }
 
         let historyText = '';
         const recentHistory = UI.chatHistory.slice(-5, -1);
         if (recentHistory.length > 0) {
-          historyText = '\\n\\n[최근 대화 맥락]\\n';
+          historyText = '\n\n[최근 대화 맥락]\n';
           for(const m of recentHistory) {
-            historyText += `${m.role === 'user' ? '사용자' : 'AI'}: ${m.text}\\n`;
+            historyText += `${m.role === 'user' ? '사용자' : 'AI'}: ${m.text}\n`;
           }
         }
 

@@ -36,7 +36,7 @@ class Pipeline {
     const pages = await db.getPages();
     const schemaDesc = pages.map(p =>
       `- slug: "${p.slug}" | title: "${p.title}" | desc: "${p.description}"`
-    ).join('\\n');
+    ).join('\n');
 
     let prompt = `당신은 위키 라우터입니다. 아래의 메모를 읽고, 관련 있는 위키 페이지의 slug를 JSON 배열로 반환하세요.
 최소 1개, 최대 3개의 관련 페이지를 선택하세요.
@@ -49,7 +49,7 @@ ${schemaDesc}
 ${memoText}`;
 
     if (attachments.length > 0) {
-      prompt += `\\n\\n[주의: 첨부파일 데이터도 함께 제공되었습니다. 텍스트와 첨부파일을 모두 고려하여 적절한 위키 페이지를 선택하세요.]`;
+      prompt += `\n\n[주의: 첨부파일 데이터도 함께 제공되었습니다. 텍스트와 첨부파일을 모두 고려하여 적절한 위키 페이지를 선택하세요.]`;
     }
 
     const options = { temperature: 0.1, maxTokens: 256, json: true };
@@ -95,10 +95,10 @@ ${page.content}
 ${memoText}`;
 
     if (attachments.length > 0) {
-      prompt += `\\n\\n[주의: 첨부파일 데이터가 함께 제공되었습니다. 첨부파일의 내용도 상세히 분석하여 위키에 알맞게 통합하세요.]`;
+      prompt += `\n\n[주의: 첨부파일 데이터가 함께 제공되었습니다. 첨부파일의 내용도 상세히 분석하여 위키에 알맞게 통합하세요.]`;
     }
 
-    prompt += `\\n\\n## 출력\\n통합된 위키 페이지 전체를 마크다운으로 출력하세요 (프론트매터 없이, 본문만):`;
+    prompt += `\n\n## 출력\n통합된 위키 페이지 전체를 마크다운으로 출력하세요 (프론트매터 없이, 본문만):`;
 
     const options = { temperature: 0.3, maxTokens: 4096 };
     if (attachments.length > 0) options.attachments = attachments;
@@ -135,7 +135,7 @@ ${memoText}`;
             title: slug,
             description: '',
             tags: [],
-            content: `# ${slug}\\n\\n`,
+            content: `# ${slug}\n\n`,
             created: new Date().toISOString()
           };
         }

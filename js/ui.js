@@ -27,9 +27,8 @@ export async function renderInbox() {
 
     <div class="memo-input-wrap">
       <textarea id="memoInput" class="memo-textarea" placeholder="업무 메모를 자유롭게 작성하세요...&#10;&#10;예: 오늘 고객사 미팅에서 API 응답 지연 문제 논의. 캐시 도입 검토 필요." rows="4"></textarea>
-      <div id="memoAttachment" class="memo-attachment hidden" style="flex-direction:column; align-items:stretch; gap:0.3rem;"></div>
       <div class="memo-actions">
-        <label class="btn-icon" title="파일 첨부 (텍스트, PDF, 이미지)">
+        <label class="btn-icon" title="파일 첨부 (이미지, PDF, 텍스트) — Gemini가 자동 분석합니다">
           📎<input type="file" id="memoFile" accept=".txt,.md,.csv,.pdf,image/*" multiple style="display:none;">
         </label>
         <button id="btnVoice" class="btn-icon" title="음성 입력">🎤</button>
@@ -81,7 +80,12 @@ function memoCard(memo, showActions = false) {
   const date = new Date(memo.created);
   const timeStr = date.toLocaleString('ko-KR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
   const statusIcon = { pending:'⏳', processing:'⚙️', done:'✅', error:'❌' }[memo.status];
-  const preview = memo.text.length > 120 ? memo.text.slice(0, 120) + '...' : memo.text;
+  const fullText = memo.text || '';
+  const isTruncated = fullText.length > 120;
+  const preview = isTruncated ? fullText.slice(0, 120) + '...' : fullText;
+
+  // attachmentIds 배열 (신규) 또는 구버전 attachments 배열 모두 처리
+  const attIds = memo.attachmentIds || [];
 
   return `
     <div class="memo-card ${memo.status}" data-id="${memo.id}">
@@ -89,10 +93,15 @@ function memoCard(memo, showActions = false) {
         <span class="memo-time">${timeStr}</span>
         <span class="memo-status">${statusIcon}</span>
       </div>
-      <p class="memo-text">${escHtml(preview)}</p>
-      ${memo.attachments && memo.attachments.length > 0 ? 
-        memo.attachments.map(a => `<div class="memo-attachment-badge">📎 ${escHtml(a.name || '첨부파일')}</div>`).join(' ') 
-        : (memo.attachment ? `<div class="memo-attachment-badge">📎 ${escHtml(memo.attachment.name || '첨부파일')}</div>` : '')}
+      <p class="memo-text memo-preview" data-full="${escHtml(fullText)}" data-short="${escHtml(preview)}">${escHtml(preview)}</p>
+      ${isTruncated ? `<button class="btn-expand-memo btn-text-sm" data-id="${memo.id}" data-expanded="false">▼ 더보기</button>` : ''}
+      ${attIds.length > 0 ? `
+        <div class="att-btn-row">
+          ${attIds.map((id, idx) => `
+            <button class="btn-view-att btn-text-sm" data-att-id="${id}">🖼️ 첨부파일 ${idx + 1} 보기</button>
+          `).join('')}
+        </div>
+      ` : ''}
       ${memo.result?.routedTo ? `<div class="memo-routed">→ ${memo.result.routedTo.join(', ')}</div>` : ''}
       ${memo.result?.error ? `<div class="memo-error">${escHtml(memo.result.error)}</div>` : ''}
       ${showActions ? `

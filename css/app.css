@@ -256,10 +256,26 @@ body {
 .memo-card-header { display: flex; justify-content: space-between; margin-bottom: 0.4rem; }
 .memo-time { font-size: 0.75rem; color: var(--text3); }
 .memo-status { font-size: 0.85rem; }
-.memo-text { font-size: 0.88rem; color: var(--text2); line-height: 1.6; }
+.memo-text { font-size: 0.88rem; color: var(--text2); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
 .memo-routed { font-size: 0.75rem; color: var(--cyan); margin-top: 0.5rem; }
 .memo-error { font-size: 0.75rem; color: var(--red); margin-top: 0.5rem; }
 .memo-card-actions { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
+
+.btn-text-sm {
+  background: none;
+  border: none;
+  color: var(--purple);
+  font-family: var(--font);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.2rem 0;
+  margin-top: 0.2rem;
+  transition: opacity 0.15s;
+}
+.btn-text-sm:hover { opacity: 0.8; }
+
+.att-btn-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
 
 /* --- Wiki --- */
 .wiki-grid { display: flex; flex-direction: column; gap: 0.8rem; }

@@ -5,7 +5,7 @@
 class WikiDB {
   constructor() {
     this.dbName = 'llm-wiki-db';
-    this.version = 1;
+    this.version = 2;
     this.db = null;
   }
 
@@ -33,6 +33,10 @@ class WikiDB {
         // Settings (key-value)
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings', { keyPath: 'key' });
+        }
+        // Attachments (원본 파일 — 메모와 분리 저장)
+        if (!db.objectStoreNames.contains('attachments')) {
+          db.createObjectStore('attachments', { keyPath: 'id' });
         }
       };
       req.onsuccess = (e) => { this.db = e.target.result; resolve(this.db); };
@@ -78,12 +82,12 @@ class WikiDB {
   }
 
   // --- Memos ---
-  async addMemo(text, attachments = []) {
+  async addMemo(text, attachmentIds = []) {
     const memo = {
       id: 'memo-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
       text: (text || '').trim(),
-      attachments: Array.isArray(attachments) ? attachments : (attachments ? [attachments] : []),
-      status: 'pending', // pending | processing | done | error
+      attachmentIds: Array.isArray(attachmentIds) ? attachmentIds : [],
+      status: 'pending',
       created: new Date().toISOString(),
       result: null
     };
@@ -93,11 +97,28 @@ class WikiDB {
   async getMemos() { return this._getAll('memos'); }
   async getMemo(id) { return this._get('memos', id); }
   async updateMemo(memo) { return this._put('memos', memo); }
-  async deleteMemo(id) { return this._delete('memos', id); }
+  async deleteMemo(id) {
+    // 연결된 첨부파일도 함께 삭제
+    const memo = await this._get('memos', id);
+    if (memo && memo.attachmentIds) {
+      for (const attId of memo.attachmentIds) {
+        await this._delete('attachments', attId).catch(() => {});
+      }
+    }
+    return this._delete('memos', id);
+  }
+
+  // --- Attachments ---
+  async addAttachment({ name, mimeType, data }) {
+    const id = 'att-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    return this._put('attachments', { id, name, mimeType, data });
+  }
+  async getAttachment(id) { return this._get('attachments', id); }
+  async deleteAttachment(id) { return this._delete('attachments', id); }
 
   async getPendingMemos() {
     const all = await this.getMemos();
-    return all.filter(m => m.status === 'pending').sort((a, b) => new Date(b.created) - new Date(a.created));
+    return all.filter(m => m.status === 'pending').sort((a, b) => new Date(a.created) - new Date(b.created));
   }
 
   // --- Wiki Pages ---

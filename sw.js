@@ -1,4 +1,4 @@
-const CACHE_NAME = 'llm-wiki-v1';
+const CACHE_NAME = 'llm-wiki-v5';
 const ASSETS = [
   './index.html',
   './css/app.css',
