@@ -22,6 +22,7 @@ const DEFAULT_SCHEMA = {
 class Pipeline {
   constructor() {
     this.isProcessing = false;
+    this.processingPages = new Set(); // 동시에 같은 페이지 처리 방지
     this.onProgress = null; // callback(step, detail)
   }
 
@@ -94,18 +95,20 @@ ${memoText}`;
 
     let prompt = `당신은 개인 위키 편집자입니다. 기존 위키 페이지에 새로운 메모 내용을 통합하여 문서를 재작성하세요.
 
-## 규칙
-1. 기존 정보를 절대 삭제하지 마세요 (Preserve and Extend)
-2. 새로운 정보를 논리적으로 적절한 위치에 자연스럽게 통합하세요
-3. 날짜와 시간 맥락을 보존하세요 (오늘: ${dateStr} ${timeStr})
-4. 마크다운 형식을 유지하세요 (제목, 목록, 강조 등)
-5. 모순되는 정보가 있으면 양쪽을 모두 기록하고 주석을 다세요
-6. 페이지 제목(# 헤더)은 유지하세요
+## 절대 지켜야 할 규칙 (위반 시 매우 심각한 문제 발생)
+1. **기존 정보를 절대 삭제하거나 압축하지 마세요** — 모든 기존 내용을 그대로 유지하고 새 내용을 추가합니다
+2. **"아직 내용이 없습니다" 같은 플레이스홀더 문구를 절대 포함하지 마세요** — 실제 내용만 작성하세요
+3. **출력 결과는 기존 페이지 내용보다 반드시 길어야 합니다** — 요약이나 압축은 금지입니다
+4. 새로운 정보를 논리적으로 적절한 위치에 자연스럽게 통합하세요
+5. 날짜와 시간 맥락을 보존하세요 (오늘: ${dateStr} ${timeStr})
+6. 마크다운 형식을 유지하세요 (제목, 목록, 강조 등)
+7. 모순되는 정보가 있으면 양쪽을 모두 기록하고 주석을 다세요
+8. 페이지 제목(# 헤더)은 유지하세요
 
-## 기존 위키 페이지
+## 기존 위키 페이지 (이 내용을 기반으로 확장하세요)
 ${page.content}
 
-## 새로운 메모 (${dateStr} ${timeStr} 작성)
+## 새로운 메모 (${dateStr} ${timeStr} 작성) — 위 내용에 통합해야 합니다
 ${memoText}`;
 
     if (attachments.length > 0) {
@@ -128,6 +131,11 @@ ${memoText}`;
     const memo = await db.getMemo(memoId);
     if (!memo) throw new Error('메모를 찾을 수 없습니다.');
 
+    // 이미 완료된 메모 재처리 경고 (실수로 덮어쓰는 것 방지)
+    if (memo.status === 'done') {
+      console.warn(`[Pipeline] 메모 ${memoId}는 이미 처리 완료 상태입니다. 재처리합니다.`);
+    }
+
     memo.status = 'processing';
     await db.updateMemo(memo);
 
@@ -143,36 +151,63 @@ ${memoText}`;
       // Step 2: Synthesize each page
       const updatedPages = [];
       for (const slug of slugs) {
-        let page = await db.getPage(slug);
-        if (!page) {
-          page = {
-            slug,
-            title: slug,
-            description: '',
-            tags: [],
-            content: `# ${slug}\n\n`,
-            created: new Date().toISOString()
-          };
+        // 같은 slug가 이미 처리 중이면 스킵 (동시 처리 방지)
+        if (this.processingPages.has(slug)) {
+          console.warn(`[Pipeline] ${slug} 페이지가 이미 처리 중이어서 스킵합니다.`);
+          continue;
         }
+        this.processingPages.add(slug);
 
-        const newContent = await this.synthesize(page, memo.text, attachments);
-        page.content = newContent;
-        await db.savePage(page);
-
-        // GitHub 자동 동기화 (실패해도 앱 흐름은 중단하지 않음)
         try {
-          await github.syncPage(slug, newContent);
-        } catch (e) {
-          console.warn(`GitHub 자동 동기화 실패 (${slug}):`, e);
-        }
+          let page = await db.getPage(slug);
+          if (!page) {
+            page = {
+              slug,
+              title: slug,
+              description: '',
+              tags: [],
+              content: `# ${slug}\n\n`,
+              created: new Date().toISOString()
+            };
+          }
 
-        updatedPages.push(slug);
-        logEntry.steps.push({ step: 'synthesize', page: slug, success: true });
+          const prevContent = page.content || '';
+          const newContent = await this.synthesize(page, memo.text, attachments);
+
+          // 안전장치: 합성 결과가 비어있거나 기존 내용보다 현저히 짧으면 저장하지 않음
+          if (!newContent || newContent.trim().length === 0) {
+            console.error(`[Pipeline] ${slug} 합성 결과가 비어있습니다. 기존 내용 보존.`);
+            logEntry.steps.push({ step: 'synthesize', page: slug, success: false, reason: 'empty_result' });
+            continue;
+          }
+
+          // 기존 내용이 충분히 있는데(200자 이상) 합성 결과가 20% 미만이면 경고 후 보존
+          if (prevContent.length > 200 && newContent.trim().length < prevContent.length * 0.2) {
+            console.error(`[Pipeline] ${slug} 합성 결과(${newContent.length}자)가 기존 내용(${prevContent.length}자)보다 너무 짧습니다. 기존 내용 보존.`);
+            logEntry.steps.push({ step: 'synthesize', page: slug, success: false, reason: 'content_too_short' });
+            continue;
+          }
+
+          page.content = newContent;
+          await db.savePage(page);
+
+          // GitHub 자동 동기화 (실패해도 앱 흐름은 중단하지 않음)
+          try {
+            await github.syncPage(slug, newContent);
+          } catch (e) {
+            console.warn(`GitHub 자동 동기화 실패 (${slug}):`, e);
+          }
+
+          updatedPages.push(slug);
+          logEntry.steps.push({ step: 'synthesize', page: slug, success: true });
+        } finally {
+          this.processingPages.delete(slug);
+        }
       }
 
       // Step 3: Update memo status
       memo.status = 'done';
-      memo.result = { routedTo: slugs, updatedPages };
+      memo.result = { routedTo: slugs, updatedPages, completedAt: new Date().toISOString() };
       await db.updateMemo(memo);
 
       // Step 4: Log

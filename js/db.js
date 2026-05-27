@@ -131,10 +131,15 @@ class WikiDB {
   async getPages() { return this._getAll('pages'); }
   async deletePage(slug) { return this._delete('pages', slug); }
 
-  async initDefaultPages(schema) {
+  async initDefaultPages(schema, forceReset = false) {
     const existing = await this.getPages();
-    if (existing.length > 0) return;
+    if (existing.length > 0 && !forceReset) return;
     for (const p of schema.pages) {
+      // 이미 실제 내용이 있는 페이지는 초기 플레이스홀더로 덮어쓰지 않음
+      const existingPage = existing.find(e => e.slug === p.slug);
+      if (existingPage && existingPage.content && existingPage.content.length > 100) {
+        continue; // 내용이 있는 페이지는 보존
+      }
       await this.savePage({
         slug: p.slug,
         title: p.title,

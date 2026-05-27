@@ -17,7 +17,12 @@ export async function renderInbox() {
   const pending = memos.filter(m => m.status === 'pending');
   const done = memos
     .filter(m => m.status === 'done')
-    .sort((a, b) => new Date(b.created) - new Date(a.created))
+    .sort((a, b) => {
+      // 처리 완료 시각(result.completedAt) 기준, 없으면 created 폴백
+      const aTime = a.result?.completedAt || a.created;
+      const bTime = b.result?.completedAt || b.created;
+      return new Date(bTime) - new Date(aTime);
+    })
     .slice(0, 10);
   const processing = memos.filter(m => m.status === 'processing');
   const errors = memos.filter(m => m.status === 'error');
