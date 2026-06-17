@@ -467,9 +467,9 @@ function bindSettingsEvents() {
   const btnInit = document.getElementById('btnInitPages');
   if (btnInit) {
     btnInit.addEventListener('click', async () => {
-      if (!confirm('모든 위키 내용이 완전히 삭제되고 처음 상태(빈 문서)로 되돌아갑니다. 정말 초기화하시겠습니까?')) return;
-      await db.initDefaultPages(DEFAULT_SCHEMA, true);
-      showToast('위키 문서들이 초기화되었습니다 🗑️');
+      if (!confirm('경고: 모든 메모, 첨부파일, 위키 문서, 로그가 완전히 삭제됩니다!\n(단, API 키 등 설정은 유지됩니다)\n정말 공장 초기화하시겠습니까?')) return;
+      await db.factoryReset(DEFAULT_SCHEMA);
+      showToast('모든 데이터가 초기화되었습니다 🗑️');
     });
   }
 

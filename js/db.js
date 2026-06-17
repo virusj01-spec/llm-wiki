@@ -81,6 +81,14 @@ class WikiDB {
     });
   }
 
+  async _clear(store) {
+    return new Promise((resolve, reject) => {
+      const req = this._tx(store, 'readwrite').clear();
+      req.onsuccess = () => resolve();
+      req.onerror = (e) => reject(e.target.error);
+    });
+  }
+
   // --- Memos ---
   async addMemo(text, attachmentIds = []) {
     const memo = {
@@ -151,6 +159,16 @@ class WikiDB {
       });
     }
   }
+
+  async factoryReset(schema) {
+    await this._clear('memos');
+    await this._clear('attachments');
+    await this._clear('pages');
+    await this._clear('logs');
+    // 설정(settings)은 유지 (API 키 등 보존)
+    await this.initDefaultPages(schema, true);
+  }
+
 
   // --- Logs ---
   async addLog(entry) {
