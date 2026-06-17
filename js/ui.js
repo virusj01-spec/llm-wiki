@@ -5,6 +5,8 @@
 import db from './db.js';
 import { pipeline, DEFAULT_SCHEMA } from './pipeline.js';
 import { renderMarkdown } from './markdown.js';
+import { buildGraphData, renderGraph as renderD3Graph } from './graph.js';
+
 
 // --- State ---
 let currentPage = null; // for wiki detail view
@@ -413,6 +415,76 @@ export async function renderLog() {
   `;
 }
 
+
+// ============================================================
+// GRAPH
+// ============================================================
+export async function renderGraph() {
+  const pages = await db.getPages();
+  const { nodes, links } = buildGraphData(pages);
+  const activeCount = pages.filter(p => (p.content || '').length > 100).length;
+  const linkCount = links.length;
+
+  return `
+    <div class="screen-header graph-header">
+      <div>
+        <h1>🕸️ Graph</h1>
+        <p class="screen-subtitle">${nodes.length}개 페이지 · ${linkCount}개 연결</p>
+      </div>
+      <div class="graph-legend">
+        <span class="legend-dot" style="background:#8b5cf6"></span><span>업무</span>
+        <span class="legend-dot" style="background:#06b6d4"></span><span>프로젝트</span>
+        <span class="legend-dot" style="background:#10b981"></span><span>학습</span>
+        <span class="legend-dot" style="background:#ec4899"></span><span>아이디어</span>
+      </div>
+    </div>
+
+    <div class="graph-wrap">
+      <svg id="knowledgeGraphSvg" class="graph-svg"></svg>
+    </div>
+
+    <div class="graph-info-row">
+      <div class="graph-stat-pill">
+        <span class="gsp-icon">📄</span>
+        <span class="gsp-val">${activeCount}</span>
+        <span class="gsp-label">활성 페이지</span>
+      </div>
+      <div class="graph-stat-pill">
+        <span class="gsp-icon">🔗</span>
+        <span class="gsp-val">${linkCount}</span>
+        <span class="gsp-label">연결 링크</span>
+      </div>
+      <div class="graph-stat-pill">
+        <span class="gsp-icon">🧩</span>
+        <span class="gsp-val">${nodes.length}</span>
+        <span class="gsp-label">전체 노드</span>
+      </div>
+    </div>
+
+    <div class="graph-hint">
+      ${linkCount === 0
+        ? '💡 메모를 처리하면 Gemini가 페이지 간 <strong>[[링크]]</strong>를 자동으로 삽입합니다'
+        : '👆 노드를 탭하면 해당 Wiki 페이지로 이동합니다 · 핀치/드래그로 확대'}
+    </div>
+  `;
+}
+
+/** 그래프 SVG에 D3 렌더링 (DOM 삽입 후 호출) */
+export async function mountGraph(onNodeClick) {
+  const svgEl = document.getElementById('knowledgeGraphSvg');
+  if (!svgEl) return;
+
+  const pages = await db.getPages();
+  const graphData = buildGraphData(pages);
+
+  // SVG 크기를 부모에 맞춤
+  const wrap = svgEl.parentElement;
+  svgEl.setAttribute('width', wrap.clientWidth);
+  svgEl.setAttribute('height', wrap.clientHeight);
+
+  renderD3Graph(svgEl, graphData, onNodeClick);
+}
+
 // ============================================================
 // Helpers
 // ============================================================
@@ -420,3 +492,4 @@ function escHtml(s) {
   if (!s) return '';
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+

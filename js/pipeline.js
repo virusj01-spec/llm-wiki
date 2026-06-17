@@ -93,6 +93,10 @@ ${memoText}`;
     const dateStr = now.toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit' });
     const timeStr = now.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit' });
 
+    // 현재 위키 slug 목록 → 링크 힌트 제공
+    const pages = await db.getPages();
+    const otherSlugs = pages.filter(p => p.slug !== page.slug).map(p => `${p.slug} (${p.title})`).join(', ');
+
     let prompt = `당신은 개인 위키 편집자입니다. 기존 위키 페이지에 새로운 메모 내용을 통합하여 문서를 재작성하세요.
 
 ## 절대 지켜야 할 규칙 (위반 시 매우 심각한 문제 발생)
@@ -104,6 +108,10 @@ ${memoText}`;
 6. 마크다운 형식을 유지하세요 (제목, 목록, 강조 등)
 7. 모순되는 정보가 있으면 양쪽을 모두 기록하고 주석을 다세요
 8. 페이지 제목(# 헤더)은 유지하세요
+9. **위키링크 규칙**: 다른 위키 페이지와 관련된 내용이 있을 때 반드시 [[slug]] 형식으로 링크를 삽입하세요
+   - 예: 프로젝트 관련 내용 → [[projects]], 할 일 관련 → [[tasks]], 학습 내용 → [[learnings]]
+   - 사용 가능한 slug 목록: ${otherSlugs}
+   - 자연스러운 문장 내에 삽입하세요 (예: "[[projects]] 페이지에도 기록됨")
 
 ## 기존 위키 페이지 (이 내용을 기반으로 확장하세요)
 ${page.content}
@@ -123,9 +131,13 @@ ${memoText}`;
     return await gemini.pro(prompt, options);
   }
 
+
   // --- Full Pipeline ---
   async process(memoId) {
-    if (this.isProcessing) throw new Error('이미 처리 중인 작업이 있습니다.');
+    if (this.isProcessing) {
+      console.warn('[Pipeline] isProcessing 플래그 강제 해제 후 재시도');
+      this.isProcessing = false; // 락 해제 후 진행 (이전 처리가 비정상 종료된 경우 대비)
+    }
     this.isProcessing = true;
 
     const memo = await db.getMemo(memoId);
@@ -147,9 +159,11 @@ ${memoText}`;
       // Step 1: Route
       const slugs = await this.route(memo.text, attachments);
       logEntry.steps.push({ step: 'route', result: slugs });
+      console.log('[Pipeline] 라우팅 결과:', slugs);
 
       // Step 2: Synthesize each page
       const updatedPages = [];
+      const skippedPages = [];
       for (const slug of slugs) {
         // 같은 slug가 이미 처리 중이면 스킵 (동시 처리 방지)
         if (this.processingPages.has(slug)) {
@@ -172,24 +186,33 @@ ${memoText}`;
           }
 
           const prevContent = page.content || '';
+          console.log(`[Pipeline] ${slug} 합성 시작 (기존 ${prevContent.length}자)`);
           const newContent = await this.synthesize(page, memo.text, attachments);
+          console.log(`[Pipeline] ${slug} 합성 완료 (결과 ${newContent?.length ?? 0}자)`);
 
-          // 안전장치: 합성 결과가 비어있거나 기존 내용보다 현저히 짧으면 저장하지 않음
+          // 안전장치: 합성 결과가 비어있으면 저장하지 않음
           if (!newContent || newContent.trim().length === 0) {
+            const reason = 'empty_result';
             console.error(`[Pipeline] ${slug} 합성 결과가 비어있습니다. 기존 내용 보존.`);
-            logEntry.steps.push({ step: 'synthesize', page: slug, success: false, reason: 'empty_result' });
+            logEntry.steps.push({ step: 'synthesize', page: slug, success: false, reason });
+            skippedPages.push(`${slug}(빈 결과)`);
             continue;
           }
 
-          // 기존 내용이 충분히 있는데(200자 이상) 합성 결과가 20% 미만이면 경고 후 보존
-          if (prevContent.length > 200 && newContent.trim().length < prevContent.length * 0.2) {
-            console.error(`[Pipeline] ${slug} 합성 결과(${newContent.length}자)가 기존 내용(${prevContent.length}자)보다 너무 짧습니다. 기존 내용 보존.`);
-            logEntry.steps.push({ step: 'synthesize', page: slug, success: false, reason: 'content_too_short' });
+          // 안전장치: 기존 내용(200자+)보다 합성 결과가 50% 미만이면 경고 후 보존
+          // (기존 20% 임계값이 너무 엄격하여 정상 결과도 차단하는 버그 수정)
+          if (prevContent.length > 200 && newContent.trim().length < prevContent.length * 0.5) {
+            const reason = 'content_too_short';
+            console.error(`[Pipeline] ${slug} 합성 결과(${newContent.length}자)가 기존 내용(${prevContent.length}자)의 50% 미만입니다. 기존 내용 보존.`);
+            logEntry.steps.push({ step: 'synthesize', page: slug, success: false, reason,
+              prevLen: prevContent.length, newLen: newContent.length });
+            skippedPages.push(`${slug}(결과 너무 짧음: ${newContent.length}/${prevContent.length}자)`);
             continue;
           }
 
           page.content = newContent;
           await db.savePage(page);
+          console.log(`[Pipeline] ${slug} 저장 완료`);
 
           // GitHub 자동 동기화 (실패해도 앱 흐름은 중단하지 않음)
           try {
@@ -199,7 +222,14 @@ ${memoText}`;
           }
 
           updatedPages.push(slug);
-          logEntry.steps.push({ step: 'synthesize', page: slug, success: true });
+          logEntry.steps.push({ step: 'synthesize', page: slug, success: true,
+            prevLen: prevContent.length, newLen: newContent.length });
+        } catch (pageErr) {
+          // 개별 페이지 처리 실패 → 로그 남기고 다음 페이지 계속 처리
+          console.error(`[Pipeline] ${slug} 처리 중 오류:`, pageErr);
+          logEntry.steps.push({ step: 'synthesize', page: slug, success: false,
+            reason: 'error', error: pageErr.message });
+          skippedPages.push(`${slug}(오류: ${pageErr.message})`);
         } finally {
           this.processingPages.delete(slug);
         }
@@ -207,15 +237,19 @@ ${memoText}`;
 
       // Step 3: Update memo status
       memo.status = 'done';
-      memo.result = { routedTo: slugs, updatedPages, completedAt: new Date().toISOString() };
+      memo.result = { routedTo: slugs, updatedPages, skippedPages, completedAt: new Date().toISOString() };
       await db.updateMemo(memo);
 
       // Step 4: Log
       logEntry.status = 'success';
       logEntry.updatedPages = updatedPages;
+      if (skippedPages.length > 0) logEntry.skippedPages = skippedPages;
       await db.addLog(logEntry);
 
-      this._emit('done', `${updatedPages.length}개 페이지 업데이트 완료`);
+      const msg = updatedPages.length > 0
+        ? `${updatedPages.length}개 페이지 업데이트 완료`
+        : `처리 완료 (저장된 페이지 없음${skippedPages.length > 0 ? ' — ' + skippedPages.join(', ') : ''})`;
+      this._emit('done', msg);
       return logEntry;
 
     } catch (err) {
@@ -231,6 +265,7 @@ ${memoText}`;
       throw err;
     } finally {
       this.isProcessing = false;
+      this.processingPages.clear(); // 비정상 종료 시에도 락 해제
     }
   }
 

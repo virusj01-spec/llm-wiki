@@ -7,6 +7,7 @@ import * as UI from './ui.js';
 import github from './github.js';
 import gemini from './gemini.js';
 
+
 let activeTab = 'inbox';
 
 // ============================================================
@@ -59,11 +60,20 @@ async function navigate(tab) {
     case 'dashboard': html = await UI.renderDashboard(); break;
     case 'settings': html = await UI.renderSettings(); break;
     case 'log': html = await UI.renderLog(); break;
+    case 'graph': html = await UI.renderGraph(); break;
   }
   main.innerHTML = html;
   main.classList.remove('fade-out');
 
   bindScreenEvents(tab);
+
+  // 그래프는 DOM 삽입 후 별도로 D3 마운트
+  if (tab === 'graph') {
+    await UI.mountGraph((slug) => {
+      UI.setCurrentPage(slug);
+      navigate('wiki');
+    });
+  }
 }
 
 // ============================================================
