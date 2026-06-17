@@ -467,7 +467,7 @@ function bindSettingsEvents() {
   const btnInit = document.getElementById('btnInitPages');
   if (btnInit) {
     btnInit.addEventListener('click', async () => {
-      await db.initDefaultPages(DEFAULT_SCHEMA);
+      await db.initDefaultPages(DEFAULT_SCHEMA, true);
       showToast('위키 페이지 초기화 완료');
     });
   }
