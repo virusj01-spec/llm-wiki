@@ -43,10 +43,34 @@ export function buildGraphData(pages) {
 /** SVG에 D3 force graph 렌더링 */
 export function renderGraph(svgEl, { nodes, links }, onNodeClick) {
   const d3 = window.d3;
-  if (!d3) { console.error('D3.js not loaded'); return; }
+  if (!d3) {
+    // D3 미로드 시 SVG에 직접 메시지 표시
+    const ns = 'http://www.w3.org/2000/svg';
+    const txt = document.createElementNS(ns, 'text');
+    txt.setAttribute('x', '50%'); txt.setAttribute('y', '50%');
+    txt.setAttribute('text-anchor', 'middle');
+    txt.setAttribute('fill', '#ef4444');
+    txt.setAttribute('font-size', '13');
+    txt.textContent = '⚠️ D3.js 로드 실패 — 네트워크 연결을 확인하세요';
+    svgEl.appendChild(txt);
+    console.error('D3.js not loaded');
+    return;
+  }
 
-  const W = svgEl.clientWidth || 360;
-  const H = svgEl.clientHeight || 460;
+  const W = svgEl.clientWidth || parseInt(svgEl.getAttribute('width')) || 340;
+  const H = svgEl.clientHeight || parseInt(svgEl.getAttribute('height')) || 420;
+
+  if (nodes.length === 0) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const txt = document.createElementNS(ns, 'text');
+    txt.setAttribute('x', '50%'); txt.setAttribute('y', '50%');
+    txt.setAttribute('text-anchor', 'middle');
+    txt.setAttribute('fill', '#505070');
+    txt.setAttribute('font-size', '12');
+    txt.textContent = '위키 페이지가 없습니다. 설정에서 초기화하세요.';
+    svgEl.appendChild(txt);
+    return;
+  }
 
   // 기존 내용 초기화
   d3.select(svgEl).selectAll('*').remove();

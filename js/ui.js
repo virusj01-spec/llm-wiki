@@ -477,13 +477,21 @@ export async function mountGraph(onNodeClick) {
   const pages = await db.getPages();
   const graphData = buildGraphData(pages);
 
-  // SVG 크기를 부모에 맞춤
+  // 브라우저 레이아웃이 끝난 뒤 크기 측정 (타이밍 버그 방지)
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  // 한 프레임 더 기다려야 calc() 높이가 확정됨
+  await new Promise(resolve => requestAnimationFrame(resolve));
+
   const wrap = svgEl.parentElement;
-  svgEl.setAttribute('width', wrap.clientWidth);
-  svgEl.setAttribute('height', wrap.clientHeight);
+  const W = (wrap && wrap.clientWidth > 0) ? wrap.clientWidth : 340;
+  const H = (wrap && wrap.clientHeight > 0) ? wrap.clientHeight : 420;
+
+  svgEl.setAttribute('width', W);
+  svgEl.setAttribute('height', H);
 
   renderD3Graph(svgEl, graphData, onNodeClick);
 }
+
 
 // ============================================================
 // Helpers
