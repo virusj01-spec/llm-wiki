@@ -423,13 +423,12 @@ export async function renderGraph() {
   const pages = await db.getPages();
   const { nodes, links } = buildGraphData(pages);
   const activeCount = pages.filter(p => (p.content || '').length > 100).length;
-  const linkCount = links.length;
 
   return `
     <div class="screen-header graph-header">
       <div>
         <h1>🕸️ Graph</h1>
-        <p class="screen-subtitle">${nodes.length}개 페이지 · ${linkCount}개 연결</p>
+        <p class="screen-subtitle">${nodes.length}개 페이지 · ${links.length}개 연결</p>
       </div>
       <div class="graph-legend">
         <span class="legend-dot" style="background:#8b5cf6"></span><span>업무</span>
@@ -439,7 +438,7 @@ export async function renderGraph() {
       </div>
     </div>
 
-    <div class="graph-wrap">
+    <div id="graphWrap" class="graph-wrap">
       <svg id="knowledgeGraphSvg" class="graph-svg"></svg>
     </div>
 
@@ -451,7 +450,7 @@ export async function renderGraph() {
       </div>
       <div class="graph-stat-pill">
         <span class="gsp-icon">🔗</span>
-        <span class="gsp-val">${linkCount}</span>
+        <span class="gsp-val">${links.length}</span>
         <span class="gsp-label">연결 링크</span>
       </div>
       <div class="graph-stat-pill">
@@ -462,7 +461,7 @@ export async function renderGraph() {
     </div>
 
     <div class="graph-hint">
-      ${linkCount === 0
+      ${links.length === 0
         ? '💡 메모를 처리하면 Gemini가 페이지 간 <strong>[[링크]]</strong>를 자동으로 삽입합니다'
         : '👆 노드를 탭하면 해당 Wiki 페이지로 이동합니다 · 핀치/드래그로 확대'}
     </div>
@@ -471,26 +470,41 @@ export async function renderGraph() {
 
 /** 그래프 SVG에 D3 렌더링 (DOM 삽입 후 호출) */
 export async function mountGraph(onNodeClick) {
+  // 짧은 딜레이로 브라우저 레이아웃 확정 대기
+  await new Promise(r => setTimeout(r, 80));
+
   const svgEl = document.getElementById('knowledgeGraphSvg');
-  if (!svgEl) return;
+  if (!svgEl) { console.warn('[Graph] SVG element not found'); return; }
 
-  const pages = await db.getPages();
-  const graphData = buildGraphData(pages);
+  // 안전한 크기 계산: window 기준 직접 계산
+  const topBarH   = document.querySelector('.top-bar')?.offsetHeight  || 48;
+  const tabBarH   = document.querySelector('.tab-bar')?.offsetHeight   || 70;
+  const headerH   = document.querySelector('.graph-header')?.offsetHeight || 60;
+  const infoRowH  = document.querySelector('.graph-info-row')?.offsetHeight || 70;
+  const hintH     = document.querySelector('.graph-hint')?.offsetHeight     || 44;
+  const padding   = 32; // 1rem top + bottom padding
 
-  // 브라우저 레이아웃이 끝난 뒤 크기 측정 (타이밍 버그 방지)
-  await new Promise(resolve => requestAnimationFrame(resolve));
-  // 한 프레임 더 기다려야 calc() 높이가 확정됨
-  await new Promise(resolve => requestAnimationFrame(resolve));
+  const W = window.innerWidth  > 600 ? 600 : window.innerWidth;
+  const H = Math.max(
+    window.innerHeight - topBarH - tabBarH - headerH - infoRowH - hintH - padding,
+    220
+  );
 
-  const wrap = svgEl.parentElement;
-  const W = (wrap && wrap.clientWidth > 0) ? wrap.clientWidth : 340;
-  const H = (wrap && wrap.clientHeight > 0) ? wrap.clientHeight : 420;
+  console.log(`[Graph] Rendering ${W}×${H}`);
 
   svgEl.setAttribute('width', W);
   svgEl.setAttribute('height', H);
 
-  renderD3Graph(svgEl, graphData, onNodeClick);
+  // graph-wrap 높이도 JS로 명시적 설정 (CSS calc 의존 제거)
+  const wrap = document.getElementById('graphWrap');
+  if (wrap) wrap.style.height = H + 'px';
+
+  const pages = await db.getPages();
+  const graphData = buildGraphData(pages);
+
+  renderD3Graph(svgEl, graphData, W, H, onNodeClick);
 }
+
 
 
 // ============================================================
