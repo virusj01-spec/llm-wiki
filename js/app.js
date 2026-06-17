@@ -467,8 +467,9 @@ function bindSettingsEvents() {
   const btnInit = document.getElementById('btnInitPages');
   if (btnInit) {
     btnInit.addEventListener('click', async () => {
+      if (!confirm('모든 위키 내용이 완전히 삭제되고 처음 상태(빈 문서)로 되돌아갑니다. 정말 초기화하시겠습니까?')) return;
       await db.initDefaultPages(DEFAULT_SCHEMA, true);
-      showToast('위키 페이지 초기화 완료');
+      showToast('위키 문서들이 초기화되었습니다 🗑️');
     });
   }
 

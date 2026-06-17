@@ -1,4 +1,4 @@
-const CACHE_NAME = 'llm-wiki-v11';
+const CACHE_NAME = 'llm-wiki-v12';
 
 // Install — 오프라인 폴백용 최소 캐시만 저장
 self.addEventListener('install', (e) => {
