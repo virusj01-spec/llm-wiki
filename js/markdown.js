@@ -36,7 +36,10 @@ export function renderMarkdown(md) {
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="md-link" target="_blank">$1</a>');
 
   // Wiki links [[slug]]
-  html = html.replace(/\[\[([^\]]+)\]\]/g, '<a href="#" class="md-wikilink" data-slug="$1">$1</a>');
+  html = html.replace(/\[\[([^\]]+)\]\]/g, (match, text) => {
+    const slug = text.trim().toLowerCase().replace(/\s+/g, '-');
+    return `<a href="#" class="md-wikilink" data-slug="${slug}">${text}</a>`;
+  });
 
   // Paragraphs
   html = html.replace(/\n\n/g, '</p><p class="md-p">');
