@@ -123,7 +123,7 @@ function bindInboxEvents() {
             const base64 = btoa(binary);
 
             const { default: gemini } = await import('./gemini.js');
-            const ocrText = await gemini.generate('gemini-2.5-flash',
+            const ocrText = await gemini.generate('gemini-3.5-flash',
               `이 ${file.type.startsWith('image/') ? '이미지' : 'PDF'}의 내용을 최대한 상세히 텍스트로 추출하고 설명하세요.\n표, 수식, 도표가 있으면 마크다운 형식으로 변환하세요.\n파일명: ${file.name}`,
               { temperature: 0.1, maxTokens: 2048, attachments: [{ mimeType: file.type, data: base64 }] }
             );

@@ -88,12 +88,12 @@ class GeminiClient {
 
   // Convenience methods
   async flash(prompt, options = {}) {
-    return this.generate('gemini-2.5-flash', prompt, options);
+    return this.generate('gemini-3.5-flash', prompt, options);
   }
 
   async pro(prompt, options = {}) {
     // 무료 티어 Pro 한도 초과(Limit: 0) 문제로 인해 Flash 모델로 대체
-    return this.generate('gemini-2.5-flash', prompt, options);
+    return this.generate('gemini-3.5-flash', prompt, options);
   }
 
   _emit429(msg) {
