@@ -16,16 +16,18 @@ let currentPage = null; // for wiki detail view
 // ============================================================
 export async function renderInbox() {
   const memos = await db.getMemos();
+  const attachments = await db._getAll('attachments');
+  const attMap = new Map(attachments.map(a => [a.id, a]));
+
   const pending = memos.filter(m => m.status === 'pending');
   const done = memos
     .filter(m => m.status === 'done')
     .sort((a, b) => {
-      // 처리 완료 시각(result.completedAt) 기준, 없으면 created 폴백
       const aTime = a.result?.completedAt || a.created;
       const bTime = b.result?.completedAt || b.created;
       return new Date(bTime) - new Date(aTime);
     })
-    .slice(0, 10);
+    .slice(0, 15);
   const processing = memos.filter(m => m.status === 'processing');
   const errors = memos.filter(m => m.status === 'error');
 
@@ -37,6 +39,10 @@ export async function renderInbox() {
 
     <div class="memo-input-wrap">
       <textarea id="memoInput" class="memo-textarea" placeholder="업무 메모를 자유롭게 작성하세요...&#10;&#10;예: 오늘 고객사 미팅에서 API 응답 지연 문제 논의. 캐시 도입 검토 필요." rows="4"></textarea>
+      
+      <!-- 첨부 대기 파일 목록 실시간 표시 영역 -->
+      <div id="pendingAttList" class="pending-att-list"></div>
+
       <div class="memo-actions">
         <label class="btn-icon" title="파일 첨부 (이미지, PDF, 텍스트) — Gemini가 자동 분석합니다">
           📎<input type="file" id="memoFile" accept=".txt,.md,.csv,.pdf,image/*" multiple style="display:none;">
@@ -52,28 +58,30 @@ export async function renderInbox() {
           <h3>⏳ 처리 대기 (${pending.length})</h3>
           <button id="btnProcessAll" class="btn-accent-sm">모두 처리</button>
         </div>
-        ${pending.map(m => memoCard(m, true)).join('')}
+        ${pending.map(m => memoCard(m, attMap, 'pending')).join('')}
       </div>
     ` : ''}
 
     ${processing.length > 0 ? `
       <div class="memo-section">
         <h3>⚙️ 처리 중...</h3>
-        ${processing.map(m => memoCard(m)).join('')}
+        ${processing.map(m => memoCard(m, attMap, 'processing')).join('')}
       </div>
     ` : ''}
 
     ${errors.length > 0 ? `
       <div class="memo-section">
         <h3>❌ 오류</h3>
-        ${errors.map(m => memoCard(m, true)).join('')}
+        ${errors.map(m => memoCard(m, attMap, 'error')).join('')}
       </div>
     ` : ''}
 
     ${done.length > 0 ? `
       <div class="memo-section">
-        <h3>✅ 최근 처리 완료</h3>
-        ${done.map(m => memoCard(m)).join('')}
+        <div class="memo-section-header">
+          <h3>✅ 최근 처리 완료 (${done.length})</h3>
+        </div>
+        ${done.map(m => memoCard(m, attMap, 'done')).join('')}
       </div>
     ` : ''}
 
@@ -86,40 +94,60 @@ export async function renderInbox() {
   `;
 }
 
-function memoCard(memo, showActions = false) {
+function memoCard(memo, attMap = null, statusType = 'pending') {
   const date = new Date(memo.created);
   const timeStr = date.toLocaleString('ko-KR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
-  const statusIcon = { pending:'⏳', processing:'⚙️', done:'✅', error:'❌' }[memo.status];
+  const statusIcon = { pending:'⏳', processing:'⚙️', done:'✅', error:'❌' }[memo.status] || '📝';
   const fullText = memo.text || '';
   const isTruncated = fullText.length > 120;
   const preview = isTruncated ? fullText.slice(0, 120) + '...' : fullText;
 
-  // attachmentIds 배열 (신규) 또는 구버전 attachments 배열 모두 처리
   const attIds = memo.attachmentIds || [];
 
   return `
     <div class="memo-card ${memo.status}" data-id="${memo.id}">
       <div class="memo-card-header">
-        <span class="memo-time">${timeStr}</span>
-        <span class="memo-status">${statusIcon}</span>
+        <span class="memo-time">${timeStr}${memo.updated ? ' (수정됨)' : ''}</span>
+        <span class="memo-status" title="${memo.status}">${statusIcon}</span>
       </div>
       <p class="memo-text memo-preview" data-full="${escHtml(fullText)}" data-short="${escHtml(preview)}">${escHtml(preview)}</p>
       ${isTruncated ? `<button class="btn-expand-memo btn-text-sm" data-id="${memo.id}" data-expanded="false">▼ 더보기</button>` : ''}
+      
       ${attIds.length > 0 ? `
-        <div class="att-btn-row">
-          ${attIds.map((id, idx) => `
-            <button class="btn-view-att btn-text-sm" data-att-id="${id}">🖼️ 첨부파일 ${idx + 1} 보기</button>
-          `).join('')}
+        <div class="att-chips-list">
+          ${attIds.map((id, idx) => {
+            const att = attMap?.get(id);
+            const name = att ? att.name : `첨부파일 ${idx + 1}`;
+            const mime = att ? att.mimeType : '';
+            const size = att && att.data ? formatFileSize(att.data.byteLength || att.data.length || 0) : '';
+            const icon = getFileIcon(name, mime);
+
+            return `
+              <button class="att-chip btn-view-att" data-att-id="${id}" title="${escHtml(name)} 확인하기">
+                <span class="att-chip-icon">${icon}</span>
+                <span class="att-chip-name">${escHtml(name)}</span>
+                ${size ? `<span class="att-chip-size">${size}</span>` : ''}
+                <span class="att-chip-action">🔍 확인</span>
+              </button>
+            `;
+          }).join('')}
         </div>
       ` : ''}
+
       ${memo.result?.routedTo ? `<div class="memo-routed">→ ${memo.result.routedTo.join(', ')}</div>` : ''}
       ${memo.result?.error ? `<div class="memo-error">${escHtml(memo.result.error)}</div>` : ''}
-      ${showActions ? `
-        <div class="memo-card-actions">
-          <button class="btn-sm btn-process" data-id="${memo.id}">처리</button>
-          <button class="btn-sm btn-delete-memo" data-id="${memo.id}">삭제</button>
-        </div>
-      ` : ''}
+      
+      <div class="memo-card-actions">
+        ${statusType === 'pending' || statusType === 'error' ? `
+          <button class="btn-sm btn-action-primary btn-process" data-id="${memo.id}">🚀 처리</button>
+          <button class="btn-sm btn-action-secondary btn-edit-memo" data-id="${memo.id}">✏️ 수정</button>
+          <button class="btn-sm btn-action-danger btn-delete-memo" data-id="${memo.id}">🗑️ 삭제</button>
+        ` : statusType === 'done' ? `
+          <button class="btn-sm btn-action-secondary btn-edit-memo" data-id="${memo.id}">✏️ 수정</button>
+          <button class="btn-sm btn-action-secondary btn-process" data-id="${memo.id}" title="수정된 내용을 위키에 다시 반영합니다">🔄 재처리</button>
+          <button class="btn-sm btn-action-danger btn-delete-memo" data-id="${memo.id}">🗑️ 삭제</button>
+        ` : ''}
+      </div>
     </div>
   `;
 }
@@ -510,8 +538,23 @@ export async function mountGraph(onNodeClick) {
 // ============================================================
 // Helpers
 // ============================================================
-function escHtml(s) {
+export function escHtml(s) {
   if (!s) return '';
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+export function formatFileSize(bytes) {
+  if (!bytes || bytes === 0) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+export function getFileIcon(name = '', mime = '') {
+  if (mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg)$/i.test(name)) return '🖼️';
+  if (mime === 'application/pdf' || /\.pdf$/i.test(name)) return '📄';
+  if (/\.(txt|md|csv|json|log)$/i.test(name) || mime.startsWith('text/')) return '📝';
+  return '📎';
+}
+
 

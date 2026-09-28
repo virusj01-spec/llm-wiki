@@ -92,8 +92,59 @@ function bindInboxEvents() {
   const btn = document.getElementById('btnAddMemo');
   const input = document.getElementById('memoInput');
   const fileInput = document.getElementById('memoFile');
+  const pendingAttContainer = document.getElementById('pendingAttList');
 
-  let pendingAttachmentIds = [];
+  // 대기 중인 첨부파일 목록 (객체 배열: { id, name, mimeType, size, data })
+  let pendingAttachments = [];
+
+  function renderPendingAttList() {
+    if (!pendingAttContainer) return;
+    if (pendingAttachments.length === 0) {
+      pendingAttContainer.innerHTML = '';
+      return;
+    }
+
+    pendingAttContainer.innerHTML = `
+      <div class="pending-att-box">
+        <div class="pending-att-header">
+          <span>📎 첨부된 파일 (${pendingAttachments.length}개)</span>
+        </div>
+        <div class="att-chips-list">
+          ${pendingAttachments.map((att, idx) => `
+            <div class="att-chip pending-chip">
+              <span class="att-chip-icon">${UI.getFileIcon(att.name, att.mimeType)}</span>
+              <span class="att-chip-name btn-preview-pending" data-idx="${idx}" title="클릭하여 확인">${UI.escHtml(att.name)}</span>
+              <span class="att-chip-size">${UI.formatFileSize(att.size)}</span>
+              <button type="button" class="att-chip-action btn-preview-pending" data-idx="${idx}" title="미리보기">🔍 확인</button>
+              <button type="button" class="att-chip-remove btn-remove-pending" data-idx="${idx}" title="첨부 취소">✕</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+
+    // 첨부 대기 파일 확인 클릭 이벤트
+    pendingAttContainer.querySelectorAll('.btn-preview-pending').forEach(el => {
+      el.addEventListener('click', (e) => {
+        const idx = parseInt(e.currentTarget.dataset.idx, 10);
+        const targetAtt = pendingAttachments[idx];
+        if (targetAtt) openAttachmentViewer(null, targetAtt);
+      });
+    });
+
+    // 첨부 취소(삭제) 클릭 이벤트
+    pendingAttContainer.querySelectorAll('.btn-remove-pending').forEach(el => {
+      el.addEventListener('click', async (e) => {
+        const idx = parseInt(e.currentTarget.dataset.idx, 10);
+        const removed = pendingAttachments.splice(idx, 1)[0];
+        if (removed && removed.id) {
+          await db.deleteAttachment(removed.id).catch(() => {});
+        }
+        renderPendingAttList();
+        showToast(`🗑️ ${removed.name} 첨부 취소`);
+      });
+    });
+  }
 
   if (fileInput) {
     fileInput.addEventListener('change', async (e) => {
@@ -101,18 +152,36 @@ function bindInboxEvents() {
       if (files.length === 0) return;
 
       for (const file of files) {
-        if (file.name.endsWith('.txt') || file.name.endsWith('.md') || file.name.endsWith('.csv')) {
-          const text = await file.text();
-          input.value = (input.value ? input.value + '\n\n' : '') + `[문서: ${file.name}]\n${text}`;
+        try {
+          const arrayBuffer = await file.arrayBuffer();
 
-        } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
-          showToast(`📷 ${file.name} 분석 중...`);
-          try {
-            const arrayBuffer = await file.arrayBuffer();
+          if (file.name.endsWith('.txt') || file.name.endsWith('.md') || file.name.endsWith('.csv')) {
+            // ① 텍스트 원본 파일도 첨부파일 스토어에 보존하여 확인/다운로드 지원
+            const saved = await db.addAttachment({ name: file.name, mimeType: file.type || 'text/plain', data: arrayBuffer });
+            pendingAttachments.push({
+              id: saved.id,
+              name: file.name,
+              mimeType: file.type || 'text/plain',
+              size: arrayBuffer.byteLength,
+              data: arrayBuffer
+            });
 
-            // ① 원본 파일을 별도 스토어에 저장 (메모 객체와 분리)
+            const text = new TextDecoder('utf-8').decode(arrayBuffer);
+            input.value = (input.value ? input.value + '\n\n' : '') + `[문서: ${file.name}]\n${text}`;
+            showToast(`📄 ${file.name} 첨부 완료`);
+
+          } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+            showToast(`📷 ${file.name} 분석 중...`);
+
+            // ① 원본 파일을 스토어에 저장
             const saved = await db.addAttachment({ name: file.name, mimeType: file.type, data: arrayBuffer });
-            pendingAttachmentIds.push(saved.id);
+            pendingAttachments.push({
+              id: saved.id,
+              name: file.name,
+              mimeType: file.type,
+              size: arrayBuffer.byteLength,
+              data: arrayBuffer
+            });
 
             // ② base64 변환 후 Gemini OCR
             const bytes = new Uint8Array(arrayBuffer);
@@ -129,27 +198,42 @@ function bindInboxEvents() {
             );
 
             input.value = (input.value ? input.value + '\n\n' : '') + `[📎 ${file.name} — OCR 결과]\n${ocrText}`;
-            showToast(`✅ ${file.name} 분석 완료`);
+            showToast(`✅ ${file.name} 분석 및 첨부 완료`);
 
-          } catch (err) {
-            showToast(`❌ ${file.name} 분석 실패: ${err.message}`);
+          } else {
+            // 기타 바이너리 파일도 첨부파일로 저장
+            const saved = await db.addAttachment({ name: file.name, mimeType: file.type || 'application/octet-stream', data: arrayBuffer });
+            pendingAttachments.push({
+              id: saved.id,
+              name: file.name,
+              mimeType: file.type || 'application/octet-stream',
+              size: arrayBuffer.byteLength,
+              data: arrayBuffer
+            });
+            showToast(`📎 ${file.name} 첨부 완료`);
           }
-
-        } else {
-          showToast(`지원하지 않는 파일 형식입니다: ${file.name}`);
+        } catch (err) {
+          showToast(`❌ ${file.name} 처리 실패: ${err.message}`);
         }
       }
       fileInput.value = '';
+      renderPendingAttList();
     });
   }
 
   if (btn && input) {
     btn.addEventListener('click', async () => {
       const text = input.value.trim();
-      if (!text && pendingAttachmentIds.length === 0) return;
-      await db.addMemo(text, pendingAttachmentIds);
+      if (!text && pendingAttachments.length === 0) {
+        showToast('메모 내용이나 첨부파일을 입력하세요.');
+        return;
+      }
+      const attIds = pendingAttachments.map(a => a.id);
+      await db.addMemo(text, attIds);
       input.value = '';
-      pendingAttachmentIds = [];
+      pendingAttachments = [];
+      renderPendingAttList();
+      showToast('📥 메모가 추가되었습니다.');
       await navigate('inbox');
     });
     input.addEventListener('keydown', (e) => {
@@ -192,17 +276,25 @@ function bindInboxEvents() {
 
   // Process single
   document.querySelectorAll('.btn-process').forEach(btn => {
-    btn.addEventListener('click', (e) => processMemo(e.target.dataset.id));
+    btn.addEventListener('click', (e) => processMemo(e.currentTarget.dataset.id));
   });
 
   // Process all
   const btnAll = document.getElementById('btnProcessAll');
   if (btnAll) btnAll.addEventListener('click', processAllMemos);
 
+  // Edit memo
+  document.querySelectorAll('.btn-edit-memo').forEach(btn => {
+    btn.addEventListener('click', (e) => openEditMemoModal(e.currentTarget.dataset.id));
+  });
+
   // Delete memo
   document.querySelectorAll('.btn-delete-memo').forEach(btn => {
     btn.addEventListener('click', async (e) => {
-      await db.deleteMemo(e.target.dataset.id);
+      const id = e.currentTarget.dataset.id;
+      if (!confirm('이 메모를 삭제하시겠습니까? (첨부파일도 함께 삭제됩니다)')) return;
+      await db.deleteMemo(id);
+      showToast('🗑️ 메모가 삭제되었습니다.');
       await navigate('inbox');
     });
   });
@@ -227,48 +319,241 @@ function bindInboxEvents() {
     });
   });
 
-  // 첨부파일 원본 보기 모달
+  // 첨부파일 확인 모달 (카드 내 첨부파일 버튼)
   document.querySelectorAll('.btn-view-att').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const attId = btn.dataset.attId;
-      const att = await db.getAttachment(attId);
-      if (!att) { showToast('첨부파일을 찾을 수 없습니다.'); return; }
-
-      const blob = new Blob([att.data], { type: att.mimeType });
-      const url = URL.createObjectURL(blob);
-      const isImage = att.mimeType.startsWith('image/');
-
-      const modal = document.createElement('div');
-      modal.style.cssText = `
-        position:fixed;inset:0;z-index:500;
-        background:rgba(0,0,0,0.92);
-        display:flex;flex-direction:column;
-        align-items:center;justify-content:flex-start;
-        padding:1rem;overflow:auto;
-      `;
-      modal.innerHTML = `
-        <div style="width:100%;max-width:600px;margin:0 auto;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;">
-            <span style="color:#9090b0;font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📎 ${escHtml(att.name)}</span>
-            <button id="btnCloseModal" style="background:none;border:1px solid rgba(255,255,255,0.2);color:#f0f0f8;border-radius:8px;padding:0.4rem 0.8rem;cursor:pointer;font-size:0.85rem;flex-shrink:0;margin-left:0.5rem;">✕ 닫기</button>
-          </div>
-          ${isImage
-            ? `<img src="${url}" style="width:100%;border-radius:10px;display:block;" alt="${escHtml(att.name)}">`
-            : `<iframe src="${url}" style="width:100%;height:80vh;border:none;border-radius:10px;" title="${escHtml(att.name)}"></iframe>`
-          }
-        </div>
-      `;
-      document.body.appendChild(modal);
-
-      modal.querySelector('#btnCloseModal').addEventListener('click', () => {
-        URL.revokeObjectURL(url);
-        modal.remove();
-      });
-      modal.addEventListener('click', (e) => {
-        if (e.target === modal) { URL.revokeObjectURL(url); modal.remove(); }
-      });
+    btn.addEventListener('click', (e) => {
+      const attId = e.currentTarget.dataset.attId;
+      openAttachmentViewer(attId);
     });
   });
+}
+
+/**
+ * ✏️ 메모 수정 전용 모달
+ */
+async function openEditMemoModal(memoId) {
+  const memo = await db.getMemo(memoId);
+  if (!memo) {
+    showToast('해당 메모를 찾을 수 없습니다.');
+    return;
+  }
+
+  // 첨부파일 정보 조회
+  const attIds = memo.attachmentIds || [];
+  const attList = [];
+  for (const id of attIds) {
+    const att = await db.getAttachment(id);
+    if (att) attList.push(att);
+  }
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'editMemoModal';
+
+  const dateStr = new Date(memo.created).toLocaleString('ko-KR', {
+    year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+  const statusKo = { pending: '⏳ 처리 대기', processing: '⚙️ 처리 중', done: '✅ 처리 완료', error: '❌ 오류' }[memo.status] || memo.status;
+
+  modal.innerHTML = `
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <h3>✏️ 메모 수정</h3>
+          <span class="memo-status-badge ${memo.status}">${statusKo}</span>
+        </div>
+        <button type="button" class="btn-close-modal" id="btnEditClose">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="modal-info-row">
+          <span class="modal-info-time">📅 작성일시: ${dateStr}</span>
+        </div>
+
+        <div class="modal-field">
+          <label for="editMemoText" class="modal-label">메모 내용</label>
+          <textarea id="editMemoText" class="memo-edit-textarea" rows="7" placeholder="메모 내용을 입력하세요...">${UI.escHtml(memo.text || '')}</textarea>
+        </div>
+
+        ${attList.length > 0 ? `
+          <div class="modal-att-section">
+            <label class="modal-label">📎 첨부된 파일 (${attList.length}개) — 클릭하여 내용 확인</label>
+            <div class="att-chips-list">
+              ${attList.map(att => `
+                <button type="button" class="att-chip btn-view-modal-att" data-att-id="${att.id}" title="${UI.escHtml(att.name)} 확인하기">
+                  <span class="att-chip-icon">${UI.getFileIcon(att.name, att.mimeType)}</span>
+                  <span class="att-chip-name">${UI.escHtml(att.name)}</span>
+                  <span class="att-chip-size">${UI.formatFileSize(att.data?.byteLength || 0)}</span>
+                  <span class="att-chip-action">🔍 확인</span>
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-sm btn-secondary" id="btnEditCancel">취소</button>
+        <button type="button" class="btn-sm btn-action-primary" id="btnEditSave">💾 저장</button>
+        ${memo.status === 'pending' || memo.status === 'error' || memo.status === 'done' ? `
+          <button type="button" class="btn-sm btn-accent-sm" id="btnEditSaveAndProcess" title="수정 내용을 저장하고 즉시 위키로 합성합니다">
+            🚀 저장 후 위키 반영
+          </button>
+        ` : ''}
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const textarea = modal.querySelector('#editMemoText');
+  if (textarea) {
+    textarea.focus();
+    // 커서를 텍스트 맨 끝으로 이동
+    textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+  }
+
+  // 모달 내부 첨부파일 확인 클릭
+  modal.querySelectorAll('.btn-view-modal-att').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const attId = e.currentTarget.dataset.attId;
+      openAttachmentViewer(attId);
+    });
+  });
+
+  const closeModal = () => modal.remove();
+
+  modal.querySelector('#btnEditClose')?.addEventListener('click', closeModal);
+  modal.querySelector('#btnEditCancel')?.addEventListener('click', closeModal);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
+
+  // 단순 저장
+  modal.querySelector('#btnEditSave')?.addEventListener('click', async () => {
+    const updatedText = textarea.value.trim();
+    memo.text = updatedText;
+    memo.updated = new Date().toISOString();
+    await db.updateMemo(memo);
+    showToast('✅ 메모가 수정되었습니다.');
+    closeModal();
+    await navigate('inbox');
+  });
+
+  // 저장 후 바로 위키 처리
+  modal.querySelector('#btnEditSaveAndProcess')?.addEventListener('click', async () => {
+    const updatedText = textarea.value.trim();
+    memo.text = updatedText;
+    memo.updated = new Date().toISOString();
+    await db.updateMemo(memo);
+    closeModal();
+    await processMemo(memo.id);
+  });
+}
+
+/**
+ * 🔍 첨부파일 확인 뷰어 모달 (이미지, PDF, 텍스트 미리보기 및 다운로드 지원)
+ */
+async function openAttachmentViewer(attId, preloadedAtt = null) {
+  const att = preloadedAtt || (attId ? await db.getAttachment(attId) : null);
+  if (!att) {
+    showToast('첨부파일을 찾을 수 없습니다.');
+    return;
+  }
+
+  const mime = att.mimeType || '';
+  const isImage = mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg)$/i.test(att.name);
+  const isPdf = mime === 'application/pdf' || /\.pdf$/i.test(att.name);
+  const isText = mime.startsWith('text/') || /\.(txt|md|csv|json|log)$/i.test(att.name);
+
+  const blob = new Blob([att.data], { type: mime || 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+
+  let textContent = '';
+  if (isText && att.data) {
+    try {
+      textContent = new TextDecoder('utf-8').decode(att.data);
+    } catch (err) {
+      textContent = '텍스트 디코딩 실패';
+    }
+  }
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay att-viewer-overlay';
+  modal.id = 'attViewerModal';
+
+  const icon = UI.getFileIcon(att.name, mime);
+  const sizeStr = UI.formatFileSize(att.data?.byteLength || 0);
+
+  modal.innerHTML = `
+    <div class="att-viewer-card">
+      <div class="att-viewer-header">
+        <div class="att-viewer-title-wrap">
+          <span class="att-viewer-icon">${icon}</span>
+          <div class="att-viewer-names">
+            <span class="att-viewer-filename">${UI.escHtml(att.name)}</span>
+            <span class="att-viewer-meta">${sizeStr} · ${UI.escHtml(mime || 'unknown')}</span>
+          </div>
+        </div>
+        <div class="att-viewer-actions">
+          <a href="${url}" download="${UI.escHtml(att.name)}" class="btn-sm btn-action-primary" title="기기에 파일 저장">
+            ⬇️ 다운로드
+          </a>
+          <button type="button" class="btn-close-modal" id="btnCloseViewer">✕</button>
+        </div>
+      </div>
+
+      <div class="att-viewer-body">
+        ${isImage ? `
+          <div class="viewer-image-wrap">
+            <img src="${url}" class="viewer-full-image" alt="${UI.escHtml(att.name)}">
+          </div>
+        ` : isPdf ? `
+          <div class="viewer-pdf-wrap">
+            <iframe src="${url}" class="viewer-pdf-frame" title="${UI.escHtml(att.name)}"></iframe>
+            <div class="viewer-pdf-fallback">
+              <span>💡 모바일 브라우저에서 PDF 미리보기가 안 보일 경우 새 창에서 확인하세요:</span>
+              <a href="${url}" target="_blank" rel="noopener noreferrer" class="btn-sm btn-action-secondary">
+                📄 새 창에서 PDF 열기
+              </a>
+            </div>
+          </div>
+        ` : isText ? `
+          <div class="viewer-text-wrap">
+            <pre class="viewer-text-code"><code>${UI.escHtml(textContent)}</code></pre>
+          </div>
+        ` : `
+          <div class="viewer-binary-wrap">
+            <div class="viewer-binary-icon">${icon}</div>
+            <p class="viewer-binary-text">이 파일 형식은 앱 내 직접 미리보기를 지원하지 않습니다.</p>
+            <a href="${url}" download="${UI.escHtml(att.name)}" class="btn-primary-sm">
+              ⬇️ 다운로드하여 열기 (${sizeStr})
+            </a>
+          </div>
+        `}
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const cleanup = () => {
+    URL.revokeObjectURL(url);
+    modal.remove();
+  };
+
+  modal.querySelector('#btnCloseViewer')?.addEventListener('click', cleanup);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) cleanup();
+  });
+
+  const onKeydown = (e) => {
+    if (e.key === 'Escape') {
+      cleanup();
+      document.removeEventListener('keydown', onKeydown);
+    }
+  };
+  document.addEventListener('keydown', onKeydown);
 }
 
 async function processMemo(id) {
