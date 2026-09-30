@@ -674,6 +674,34 @@ function bindWikiEvents() {
     btnNewest.addEventListener('click', () => sortSections('newest'));
     btnOldest.addEventListener('click', () => sortSections('oldest'));
   }
+
+  // Rebuild wiki button
+  const btnRebuild = document.getElementById('btnRebuildWiki');
+  if (btnRebuild) {
+    btnRebuild.addEventListener('click', async () => {
+      const slug = btnRebuild.dataset.slug;
+      if (!confirm(`이 위키 페이지를 관련된 모든 메모를 기반으로 재구성합니다.\nAPI 호출이 발생합니다. 계속하시겠습니까?`)) return;
+
+      btnRebuild.disabled = true;
+      btnRebuild.textContent = '⏳ 재구성 중...';
+
+      pipeline.onProgress = (step, detail) => {
+        showToast(detail);
+      };
+
+      try {
+        const result = await pipeline.rebuildPage(slug);
+        showToast(`✅ 위키 재구성 완료! ${result.memoCount}개 메모 통합 (${result.contentLength}자)`);
+        await navigate('wiki'); // 새로고침
+      } catch (err) {
+        showToast(`❌ 재구성 실패: ${err.message}`);
+        btnRebuild.disabled = false;
+        btnRebuild.textContent = '🔄 위키 재구성';
+      } finally {
+        pipeline.onProgress = null;
+      }
+    });
+  }
 }
 
 function bindSettingsEvents() {

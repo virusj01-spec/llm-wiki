@@ -284,6 +284,79 @@ ${memoText}`;
     return results;
   }
 
+  // 위키 페이지 재구성: 관련된 모든 메모를 모아 한 번에 재합성
+  async rebuildPage(slug) {
+    this._emit('rebuild', `"${slug}" 위키 재구성 준비 중...`);
+
+    const page = await db.getPage(slug);
+    if (!page) throw new Error('위키 페이지를 찾을 수 없습니다.');
+
+    // 이 페이지에 라우팅된 모든 완료 메모 수집
+    const allMemos = await db.getMemos();
+    const relatedMemos = allMemos
+      .filter(m => m.status === 'done' && m.result?.routedTo?.includes(slug))
+      .sort((a, b) => new Date(a.created) - new Date(b.created)); // 오래된 순
+
+    if (relatedMemos.length === 0) {
+      throw new Error('이 페이지와 관련된 처리 완료 메모가 없습니다.');
+    }
+
+    this._emit('rebuild', `${relatedMemos.length}개 메모를 수집하여 재합성 중...`);
+
+    // 모든 메모 텍스트를 날짜별로 묶어서 전달
+    const memoTexts = relatedMemos.map((m, i) => {
+      const date = new Date(m.created);
+      const dateStr = date.toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit' });
+      const timeStr = date.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit' });
+      return `### 메모 ${i + 1} (${dateStr} ${timeStr})\n${m.text}`;
+    }).join('\n\n---\n\n');
+
+    // 현재 위키 slug 목록 → 링크 힌트 제공
+    const pages = await db.getPages();
+    const otherSlugs = pages.filter(p => p.slug !== slug).map(p => `${p.slug} (${p.title})`).join(', ');
+
+    const prompt = `당신은 개인 위키 편집자입니다. 아래의 모든 메모를 하나의 체계적인 위키 페이지로 통합하세요.
+
+## 절대 지켜야 할 규칙
+1. **모든 메모의 내용을 빠짐없이 포함하세요** — 어떤 메모도 생략하지 마세요
+2. 날짜별로 정리하되, 관련 내용끼리 논리적으로 그룹화하세요
+3. 각 항목에 날짜(## YYYY. MM. DD 형식)를 포함하세요
+4. 마크다운 형식 사용 (제목, 목록, 강조 등)
+5. **위키링크**: 관련 내용에 [[slug]] 형식 링크 삽입 (사용 가능: ${otherSlugs})
+6. 페이지 제목은 "# ${page.title}"로 시작하세요
+
+## 위키 페이지 정보
+- 제목: ${page.title}
+- 설명: ${page.description}
+
+## 통합할 메모 목록 (총 ${relatedMemos.length}개 — 모두 포함해야 합니다)
+
+${memoTexts}
+
+## 출력
+위의 모든 메모를 빠짐없이 통합한 완성된 위키 페이지를 마크다운으로 출력하세요:`;
+
+    const options = { temperature: 0.3, maxTokens: 32768 };
+    const newContent = await gemini.pro(prompt, options);
+
+    if (!newContent || newContent.trim().length === 0) {
+      throw new Error('재구성 결과가 비어있습니다.');
+    }
+
+    page.content = newContent;
+    await db.savePage(page);
+
+    // GitHub 동기화
+    try {
+      await github.syncPage(slug, newContent);
+    } catch (e) {
+      console.warn(`GitHub 동기화 실패 (${slug}):`, e);
+    }
+
+    this._emit('done', `"${page.title}" 위키 재구성 완료 (${relatedMemos.length}개 메모 통합)`);
+    return { slug, memoCount: relatedMemos.length, contentLength: newContent.length };
+  }
+
   _emit(step, detail) {
     if (this.onProgress) this.onProgress(step, detail);
   }

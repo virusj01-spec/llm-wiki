@@ -190,6 +190,12 @@ async function renderWikiDetail(slug) {
   const page = await db.getPage(slug);
   if (!page) { currentPage = null; return renderWiki(); }
 
+  // 이 페이지와 관련된 메모 수 계산
+  const allMemos = await db.getMemos();
+  const relatedMemoCount = allMemos.filter(m =>
+    m.status === 'done' && m.result?.routedTo?.includes(slug)
+  ).length;
+
   const content = page.content || '';
 
   // 날짜 기반 섹션 분리: ## 또는 ### 뒤에 날짜 패턴이 있는 헤더를 기준으로 분리
@@ -254,14 +260,16 @@ async function renderWikiDetail(slug) {
         <span>📅 ${new Date(page.updated).toLocaleDateString('ko-KR')}</span>
         <span>🏷️ ${(page.tags||[]).join(', ')}</span>
         <span>📄 ${content.length > 0 ? content.length + '자' : '미작성'}</span>
+        <span>📝 관련 메모 ${relatedMemoCount}개</span>
       </div>
-      ${hasSections ? `
-      <div class="wiki-sort-bar">
+      <div class="wiki-action-bar">
+        ${hasSections ? `
         <button id="btnSortNewest" class="btn-sm btn-sort active">🕐 최신순</button>
         <button id="btnSortOldest" class="btn-sm btn-sort">📅 오래된순</button>
         <span class="wiki-section-count">${sections.length}개 항목</span>
+        ` : ''}
+        <button id="btnRebuildWiki" class="btn-sm btn-rebuild" data-slug="${slug}">🔄 위키 재구성</button>
       </div>
-      ` : ''}
     </div>
     <div class="wiki-content markdown-body" id="wikiDetailContent">
       ${renderedContent}

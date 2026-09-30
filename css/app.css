@@ -303,12 +303,13 @@ body {
 .wiki-detail-meta { display: flex; gap: 1rem; font-size: 0.8rem; color: var(--text3); margin-top: 0.3rem; flex-wrap: wrap; }
 
 /* Wiki sort bar */
-.wiki-sort-bar {
+.wiki-action-bar {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   margin-top: 0.8rem;
   padding: 0.5rem 0;
+  flex-wrap: wrap;
 }
 .btn-sort {
   padding: 0.35rem 0.8rem;
@@ -335,6 +336,20 @@ body {
 .wiki-section {
   padding: 0.5rem 0;
 }
+.btn-rebuild {
+  padding: 0.35rem 0.8rem;
+  border-radius: 100px;
+  border: 1px solid rgba(16,185,129,0.3);
+  background: rgba(16,185,129,0.1);
+  color: var(--green);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s;
+  margin-left: auto;
+}
+.btn-rebuild:hover { background: rgba(16,185,129,0.2); border-color: var(--green); }
+.btn-rebuild:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* --- Markdown Body --- */
 .wiki-content { margin-top: 1rem; }
