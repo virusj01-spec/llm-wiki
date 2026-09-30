@@ -355,7 +355,7 @@ export async function renderDashboard() {
 
     <div class="stats-grid">
       <div class="stat-card">
-        <div class="stat-value">${totalDone + pending}</div>
+        <div class="stat-value">${memos.length}</div>
         <div class="stat-label">총 메모</div>
       </div>
       <div class="stat-card accent">
