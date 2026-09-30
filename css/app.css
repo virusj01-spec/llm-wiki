@@ -300,7 +300,41 @@ body {
   font-size: 0.68rem;
   font-weight: 500;
 }
-.wiki-detail-meta { display: flex; gap: 1rem; font-size: 0.8rem; color: var(--text3); margin-top: 0.3rem; }
+.wiki-detail-meta { display: flex; gap: 1rem; font-size: 0.8rem; color: var(--text3); margin-top: 0.3rem; flex-wrap: wrap; }
+
+/* Wiki sort bar */
+.wiki-sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+  padding: 0.5rem 0;
+}
+.btn-sort {
+  padding: 0.35rem 0.8rem;
+  border-radius: 100px;
+  border: 1px solid var(--border);
+  background: var(--glass);
+  color: var(--text2);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.btn-sort:hover { background: var(--glass-hover); border-color: var(--border-hover); }
+.btn-sort.active {
+  background: rgba(139,92,246,0.15);
+  border-color: var(--purple);
+  color: var(--purple);
+  font-weight: 600;
+}
+.wiki-section-count {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--text3);
+}
+.wiki-section {
+  padding: 0.5rem 0;
+}
 
 /* --- Markdown Body --- */
 .wiki-content { margin-top: 1rem; }

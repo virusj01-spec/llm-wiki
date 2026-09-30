@@ -632,6 +632,48 @@ function bindWikiEvents() {
       await navigate('wiki');
     });
   });
+
+  // Sort buttons (wiki detail view)
+  const btnNewest = document.getElementById('btnSortNewest');
+  const btnOldest = document.getElementById('btnSortOldest');
+  const contentEl = document.getElementById('wikiDetailContent');
+
+  if (btnNewest && btnOldest && contentEl) {
+    const sortSections = (order) => {
+      const sections = Array.from(contentEl.querySelectorAll('.wiki-section'));
+      if (sections.length === 0) return;
+
+      // Separate non-section content (header) from sections
+      const allChildren = Array.from(contentEl.children);
+      const nonSections = allChildren.filter(el => !el.classList.contains('wiki-section') && !el.classList.contains('md-hr'));
+      const hrElements = allChildren.filter(el => el.classList.contains('md-hr'));
+
+      sections.sort((a, b) => {
+        const dateA = new Date(a.dataset.date || 0);
+        const dateB = new Date(b.dataset.date || 0);
+        return order === 'newest' ? dateB - dateA : dateA - dateB;
+      });
+
+      // Clear and rebuild
+      contentEl.innerHTML = '';
+      nonSections.forEach(el => contentEl.appendChild(el));
+      sections.forEach((s, i) => {
+        if (i > 0) {
+          const hr = document.createElement('hr');
+          hr.className = 'md-hr';
+          contentEl.appendChild(hr);
+        }
+        contentEl.appendChild(s);
+      });
+
+      // Update button active states
+      btnNewest.classList.toggle('active', order === 'newest');
+      btnOldest.classList.toggle('active', order === 'oldest');
+    };
+
+    btnNewest.addEventListener('click', () => sortSections('newest'));
+    btnOldest.addEventListener('click', () => sortSections('oldest'));
+  }
 }
 
 function bindSettingsEvents() {

@@ -190,6 +190,62 @@ async function renderWikiDetail(slug) {
   const page = await db.getPage(slug);
   if (!page) { currentPage = null; return renderWiki(); }
 
+  const content = page.content || '';
+
+  // 날짜 기반 섹션 분리: ## 또는 ### 뒤에 날짜 패턴이 있는 헤더를 기준으로 분리
+  // 예: ## 2025. 01. 15, ### 2025-01-15, ## 01/15 등
+  const lines = content.split('\n');
+  const sections = [];
+  let headerContent = [];  // 첫 번째 날짜 섹션 전의 내용 (제목, 소개 등)
+  let currentSection = null;
+
+  const dateHeaderRegex = /^(#{1,4})\s+.*(\d{4}[\.\-\/]\s*\d{1,2}[\.\-\/]\s*\d{1,2}|\d{1,2}[\.\-\/]\s*\d{1,2})/;
+
+  for (const line of lines) {
+    const match = line.match(dateHeaderRegex);
+    if (match) {
+      if (currentSection) {
+        sections.push(currentSection);
+      }
+      // 날짜 추출 시도
+      const dateMatch = line.match(/(\d{4})[\.\-\/]\s*(\d{1,2})[\.\-\/]\s*(\d{1,2})/);
+      let sortDate = new Date(0);
+      if (dateMatch) {
+        sortDate = new Date(parseInt(dateMatch[1]), parseInt(dateMatch[2]) - 1, parseInt(dateMatch[3]));
+      }
+      currentSection = { header: line, lines: [], date: sortDate };
+    } else if (currentSection) {
+      currentSection.lines.push(line);
+    } else {
+      headerContent.push(line);
+    }
+  }
+  if (currentSection) {
+    sections.push(currentSection);
+  }
+
+  // 날짜 섹션이 없으면 (## 헤더 기반 분리 시도)
+  const hasSections = sections.length > 0;
+  let renderedContent;
+
+  if (hasSections) {
+    // 기본: 최신순 정렬
+    sections.sort((a, b) => b.date - a.date);
+
+    const headerHtml = headerContent.join('\n').trim()
+      ? renderMarkdown(headerContent.join('\n'))
+      : '';
+
+    const sectionsHtml = sections.map((s, i) => {
+      const sectionMd = s.header + '\n' + s.lines.join('\n');
+      return `<div class="wiki-section" data-date="${s.date.toISOString()}">${renderMarkdown(sectionMd)}</div>`;
+    }).join('<hr class="md-hr">');
+
+    renderedContent = headerHtml + sectionsHtml;
+  } else {
+    renderedContent = renderMarkdown(content);
+  }
+
   return `
     <div class="screen-header">
       <button id="btnBackWiki" class="btn-back">← 목록</button>
@@ -197,10 +253,18 @@ async function renderWikiDetail(slug) {
       <div class="wiki-detail-meta">
         <span>📅 ${new Date(page.updated).toLocaleDateString('ko-KR')}</span>
         <span>🏷️ ${(page.tags||[]).join(', ')}</span>
+        <span>📄 ${content.length > 0 ? content.length + '자' : '미작성'}</span>
       </div>
+      ${hasSections ? `
+      <div class="wiki-sort-bar">
+        <button id="btnSortNewest" class="btn-sm btn-sort active">🕐 최신순</button>
+        <button id="btnSortOldest" class="btn-sm btn-sort">📅 오래된순</button>
+        <span class="wiki-section-count">${sections.length}개 항목</span>
+      </div>
+      ` : ''}
     </div>
-    <div class="wiki-content markdown-body">
-      ${renderMarkdown(page.content || '')}
+    <div class="wiki-content markdown-body" id="wikiDetailContent">
+      ${renderedContent}
     </div>
   `;
 }

@@ -125,7 +125,7 @@ ${memoText}`;
 
     prompt += `\n\n## 출력\n통합된 위키 페이지 전체를 마크다운으로 출력하세요 (프론트매터 없이, 본문만):`;
 
-    const options = { temperature: 0.3, maxTokens: 4096 };
+    const options = { temperature: 0.3, maxTokens: 16384 };
     if (attachments.length > 0) options.attachments = attachments;
 
     return await gemini.pro(prompt, options);
